@@ -2,12 +2,24 @@ const Receipt = require('../models/Receipt');
 const Payment = require('../models/Payment');
 const PDFKit = require('pdfkit');
 const ExcelJS = require('exceljs');
-const { put } = require('@vercel/blob');
+const { put } = require('@vercel/blob'); // Import Vercel Blob SDK
+const fs = require('fs').promises;
 const path = require('path');
+const { createWriteStream } = require('fs');
 
-// Remove ensureUploadsDir since we won't use local file system
-// const uploadsDir = path.join(__dirname, '../Uploads');
-// const ensureUploadsDir = async () => { ... }; // Removed
+// Use /tmp for temporary file storage in Vercel
+const uploadsDir = '/tmp'; // Vercel allows writing to /tmp
+
+// Ensure uploads directory exists (only for /tmp in Vercel)
+const ensureUploadsDir = async () => {
+  try {
+    await fs.mkdir(uploadsDir, { recursive: true });
+    console.log('Uploads directory ensured:', uploadsDir);
+  } catch (error) {
+    console.error('Error creating uploads directory:', error);
+    throw new Error('Failed to create uploads directory');
+  }
+};
 
 exports.getSummaryReport = async (req, res) => {
   try {
@@ -52,32 +64,17 @@ exports.getSummaryReport = async (req, res) => {
     if (format === 'pdf') {
       const doc = new PDFKit({ margin: 40, size: 'A4' });
       const filename = `report-${Date.now()}.pdf`;
-      const buffers = []; // Collect PDF data in memory
+      const filePath = path.join(uploadsDir, filename);
+      const writeStream = createWriteStream(filePath);
+      doc.pipe(writeStream);
 
-      doc.on('data', (chunk) => buffers.push(chunk));
-      doc.on('end', async () => {
-        try {
-          const pdfBuffer = Buffer.concat(buffers);
-          const blob = await put(`reports/${filename}`, pdfBuffer, {
-            access: 'public',
-            addRandomSuffix: true,
-          });
-          console.log(`PDF uploaded to Blob: ${blob.url}`);
-          res.json({ url: blob.url });
-        } catch (err) {
-          console.error(`Error uploading PDF to Blob: ${err.message}`);
-          res.status(500).json({ error: 'Failed to upload PDF report' });
-        }
-      });
-
-      // Improved header function (remove local image dependency)
+      // Header function
       const addHeader = () => {
-        // Skip local image (dcl.png) since it can't be read in Vercel
-        doc
-          .font('Helvetica-Bold')
-          .fontSize(16)
-          .fillColor('#4f46e5')
-          .text('Your Company', 40, 25);
+        try {
+          doc.image(path.join(__dirname, '../dcl.png'), 40, 20, { width: 80 });
+        } catch {
+          doc.font('Helvetica-Bold').fontSize(16).fillColor('#4f46e5').text('Your Company', 40, 25);
+        }
         doc
           .font('Helvetica-Bold')
           .fontSize(14)
@@ -92,7 +89,7 @@ exports.getSummaryReport = async (req, res) => {
         doc.moveTo(40, 65).lineTo(555, 65).strokeColor('#e5e7eb').stroke();
       };
 
-      // Improved footer function
+      // Footer function
       const addFooter = (pageNumber) => {
         const pageHeight = doc.page.height;
         doc
@@ -108,13 +105,10 @@ exports.getSummaryReport = async (req, res) => {
           .text(`Page ${pageNumber}`, 555, pageHeight - 40, { align: 'right' });
       };
 
-      // Add first page header
       addHeader();
 
-      // Content
       let currentY = 80;
 
-      // Date and period
       doc
         .font('Helvetica')
         .fontSize(10)
@@ -136,8 +130,9 @@ exports.getSummaryReport = async (req, res) => {
 
       currentY += 30;
 
-      // Summary Section
-      doc.rect(40, currentY, 515, 90).fillAndStroke('#f9fafb', '#d1d5db');
+      doc
+        .rect(40, currentY, 515, 90)
+        .fillAndStroke('#f9fafb', '#d1d5db');
 
       doc
         .fillColor('#1f2937')
@@ -157,7 +152,6 @@ exports.getSummaryReport = async (req, res) => {
 
       currentY += 110;
 
-      // Category Summary Table
       doc.font('Helvetica-Bold').fontSize(12).fillColor('#1f2937').text('Category Summary', 40, currentY);
       currentY += 20;
 
@@ -166,7 +160,6 @@ exports.getSummaryReport = async (req, res) => {
       const colWidths = [350, 165];
       const rowHeight = 25;
 
-      // Table Header
       doc
         .font('Helvetica-Bold')
         .fontSize(11)
@@ -187,7 +180,6 @@ exports.getSummaryReport = async (req, res) => {
         .strokeColor('#d1d5db')
         .stroke();
 
-      // Table Rows
       Object.entries(categorySummary).forEach(([category, amount], index) => {
         const y = tableTop + rowHeight * (index + 1);
 
@@ -233,7 +225,6 @@ exports.getSummaryReport = async (req, res) => {
 
       currentY = tableTop + rowHeight * (Object.keys(categorySummary).length + 1) + 20;
 
-      // Transactions Table
       if (reportData.transactions.length > 0) {
         if (currentY > doc.page.height - 200) {
           doc.addPage();
@@ -277,7 +268,8 @@ exports.getSummaryReport = async (req, res) => {
             .rect(tableLeft, txTableTop, txColWidths[0], txRowHeight)
             .rect(tableLeft + txColWidths[0], txTableTop, txColWidths[1], txRowHeight)
             .rect(tableLeft + txColWidths[0] + txColWidths[1], txTableTop, txColWidths[2], txRowHeight)
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], txTableTop, txColWidths[3], txColWidths[4], txRowHeight)
+            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], txTableTop, txColWidths[3], txRowHeight)
+            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], txTableTop, txColWidths[4], txRowHeight)
             .strokeColor('#d1d5db')
             .stroke();
         };
@@ -288,12 +280,12 @@ exports.getSummaryReport = async (req, res) => {
         reportData.transactions.forEach((t, index) => {
           const y = txTableTop + txRowHeight * (index + 1);
 
-          if (y + txRowHeight > doc.page.height - 1) {
+          if (y + txRowHeight > doc.page.height - 100) {
             doc.addPage();
             currentY = 80;
             txTableTop = currentY;
             addHeader();
-            addFooter(doc.pageNumber);
+            addFooter(doc.page.number);
             addTxTableHeader();
             currentY += txRowHeight;
           }
@@ -313,7 +305,7 @@ exports.getSummaryReport = async (req, res) => {
             .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], y, txColWidths[4], txRowHeight)
             .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff');
 
-            doc
+          doc
             .fillColor('#374151')
             .text(t instanceof Receipt ? 'Receipt' : 'Payment', tableLeft + 10, y + 8, { align: 'center' })
             .text(t.date ? t.date.toISOString().split('T')[0] : 'N/A', tableLeft + txColWidths[0] + 10, y + 8, { align: 'center' })
@@ -322,7 +314,7 @@ exports.getSummaryReport = async (req, res) => {
             .fillColor(t instanceof Receipt ? '#10b981' : '#ef4444')
             .text(`$${t.amount?.toFixed(2) || '0.00'}`, tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 10, y + 8, { align: 'right' });
 
-            doc
+          doc
             .rect(tableLeft, y, txColWidths[0], txRowHeight)
             .rect(tableLeft + txColWidths[0], y, txColWidths[1], txRowHeight)
             .rect(tableLeft + txColWidths[0] + txColWidths[1], y, txColWidths[2], txRowHeight)
@@ -334,6 +326,24 @@ exports.getSummaryReport = async (req, res) => {
       }
 
       doc.end();
+
+      // Wait for PDF to finish writing
+      await new Promise((resolve, reject) => {
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+      });
+
+      // Read the PDF file and upload to Vercel Blob
+      const pdfBuffer = await fs.readFile(filePath);
+      const blob = await put(`reports/${filename}`, pdfBuffer, {
+        access: 'public',
+        addRandomSuffix: true,
+      });
+
+      // Clean up temporary file
+      await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
+
+      res.json({ url: blob.url });
     } else if (format === 'excel') {
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'YourApp';
@@ -343,9 +353,22 @@ exports.getSummaryReport = async (req, res) => {
         pageSetup: { fitToPage: true, fitToWidth: 1, margins: { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75 } },
       });
 
-      // Header (remove local image dependency)
-      worksheet.addRow(['Your Company']).font = { size: 16, bold: true, color: { argb: 'FF4F46E5' } };
-      worksheet.mergeCells('A1:E1');
+      // Header
+      try {
+        const logoPath = path.join(__dirname, '../dcl.png');
+        const logoBuffer = await fs.readFile(logoPath);
+        const logo = workbook.addImage({
+          buffer: logoBuffer,
+          extension: 'png', // Ensure correct extension
+        });
+        worksheet.addImage(logo, {
+          tl: { col: 0, row: 0 },
+          ext: { width: 80, height: 80 },
+        });
+      } catch {
+        worksheet.addRow(['Your Company']).font = { size: 16, bold: true, color: { argb: 'FF4F46E5' } };
+        worksheet.mergeCells('A1:E1');
+      }
 
       worksheet.mergeCells('C1:E1');
       worksheet.getCell('C1').value = 'Financial Summary Report';
@@ -358,15 +381,18 @@ exports.getSummaryReport = async (req, res) => {
       worksheet.addRow([]);
       worksheet.getRow(3).height = 10;
 
-      // Summary Section
       worksheet.mergeCells('A4:E4');
       worksheet.getCell('A4').value = 'Summary';
       worksheet.getCell('A4').font = { size: 14, bold: true, color: { argb: 'FF1F2937' } };
       worksheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
       worksheet.getCell('A4').alignment = { horizontal: 'center' };
-      worksheet
-        .addRow(['Period', `${startDate ? new Date(startDate).toLocaleDateString('en-US') : 'N/A'} to ${endDate ? new Date(endDate).toLocaleDateString('en-US') : 'N/A'}`, '', '', ''])
-        .font = { size: 11 };
+      worksheet.addRow([
+        'Period',
+        `${startDate ? new Date(startDate).toLocaleDateString('en-US') : 'N/A'} to ${endDate ? new Date(endDate).toLocaleDateString('en-US') : 'N/A'}`,
+        '',
+        '',
+        '',
+      ]).font = { size: 11 };
       worksheet.addRow(['Total Receipts', `$${totalReceipts.toFixed(2)}`, '', '', '']).font = { size: 11, color: { argb: 'FF10B981' } };
       worksheet.addRow(['Total Payments', `$${totalPayments.toFixed(2)}`, '', '', '']).font = { size: 11, color: { argb: 'FFEF4444' } };
       worksheet.addRow(['Balance', `$${reportData.balance.toFixed(2)}`, '', '', '']).font = {
@@ -380,7 +406,6 @@ exports.getSummaryReport = async (req, res) => {
       }
       worksheet.addRow([]);
 
-      // Category Summary Table
       worksheet.mergeCells(`A${worksheet.rowCount}:E${worksheet.rowCount}`);
       worksheet.getCell(`A${worksheet.rowCount}`).value = 'Category Summary';
       worksheet.getCell(`A${worksheet.rowCount}`).font = { size: 14, bold: true, color: { argb: 'FF1F2937' } };
@@ -401,7 +426,6 @@ exports.getSummaryReport = async (req, res) => {
       });
       worksheet.addRow([]);
 
-      // Transactions Table
       worksheet.mergeCells(`A${worksheet.rowCount}:E${worksheet.rowCount}`);
       worksheet.getCell(`A${worksheet.rowCount}`).value = 'Transactions';
       worksheet.getCell(`A${worksheet.rowCount}`).font = { size: 14, bold: true, color: { argb: 'FF1F2937' } };
@@ -437,7 +461,6 @@ exports.getSummaryReport = async (req, res) => {
         row.height = 20;
       });
 
-      // Auto-fit columns
       worksheet.columns.forEach((column) => {
         let maxLength = 0;
         column.eachCell({ includeEmpty: true }, (cell) => {
@@ -447,7 +470,6 @@ exports.getSummaryReport = async (req, res) => {
         column.width = Math.min(Math.max(column.width || 10, maxLength + 2), 50);
       });
 
-      // Add borders to tables
       const addBorders = (startRow, endRow) => {
         for (let i = startRow; i <= endRow; i++) {
           ['A', 'B', 'C', 'D', 'E'].forEach((col) => {
@@ -465,12 +487,19 @@ exports.getSummaryReport = async (req, res) => {
       addBorders(13 + Object.keys(categorySummary).length, 13 + Object.keys(categorySummary).length + reportData.transactions.length);
 
       const filename = `report-${Date.now()}.xlsx`;
-      const excelBuffer = await workbook.xlsx.writeBuffer();
+      const filePath = path.join(uploadsDir, filename);
+      await workbook.xlsx.writeFile(filePath);
+
+      // Read the Excel file and upload to Vercel Blob
+      const excelBuffer = await fs.readFile(filePath);
       const blob = await put(`reports/${filename}`, excelBuffer, {
         access: 'public',
         addRandomSuffix: true,
       });
-      console.log(`Excel uploaded to Blob: ${blob.url}`);
+
+      // Clean up temporary file
+      await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
+
       res.json({ url: blob.url });
     } else {
       res.json(reportData);
