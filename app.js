@@ -14,11 +14,9 @@ const app = express();
 connectDB();
 
 // Middleware
-// app.use(cors({
-//   origin: '*',
-//   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-//   allowedHeaders: ['Content-Type', 'Authorization']
-// }));
+app.use(cors());
+app.options('*', cors()); // Preflight
+
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads')); // Serve uploaded files
