@@ -17,7 +17,7 @@ connectDB();
 
 // Middleware
 app.use(cors({
-  origin: '*',
+  origin: 'https://client-phi-orcin.vercel.app',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
