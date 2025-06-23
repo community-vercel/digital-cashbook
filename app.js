@@ -18,6 +18,7 @@ app.use(cors());
 app.options('*', cors()); // Preflight
 
 
+
 app.use(express.json());
 app.use('/uploads', express.static('uploads')); // Serve uploaded files
 
