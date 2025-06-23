@@ -2,32 +2,39 @@ const Receipt = require('../models/Receipt');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs'); // Add fs for file deletion
+const { put, del } = require('@vercel/blob');
 
+const storage = multer.memoryStorage();
+exports.uploadReceiptImage = multer({ storage }).single('receiptImage');
 // Configure Multer storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Make sure 'uploads' folder exists
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  }
-});
+
 
 // Middleware to handle file uploads
-exports.uploadReceiptImage = multer({ storage }).single('receiptImage');
 
 // Create receipt
 exports.createReceipt = async (req, res) => {
-    console.log('Received request to create receipt:', req.body);
   try {
+    let receiptImageUrl = null;
+
+    // If a file is uploaded, store it in Vercel Blob
+    if (req.file) {
+      const { buffer, originalname } = req.file;
+      const blob = await put(`receipts/${Date.now()}_${originalname}`, buffer, {
+        access: 'public', // Set to 'private' if you want restricted access
+      });
+      receiptImageUrl = blob.url; // Get the URL of the uploaded file
+    }
+
     const data = {
       ...req.body,
-      receiptImage: req.file ? req.file.path : null,
-      user: req.body.user // Assuming auth middleware provides user ID
+      receiptImage: receiptImageUrl,
+      user: req.body.user, // Assuming auth middleware provides user ID
     };
+
     const newReceipt = await Receipt.create(data);
     res.status(201).json(newReceipt);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -46,8 +53,6 @@ exports.getReceipts = async (req, res) => {
 
 // Update receipt
 exports.updateReceipt = async (req, res) => {
-            console.log('Received request to create receipt:', req.body);
-
   try {
     const { id } = req.params;
     const receipt = await Receipt.findOne({ _id: id, user: req.body.user });
@@ -56,32 +61,42 @@ exports.updateReceipt = async (req, res) => {
       return res.status(404).json({ error: 'Receipt not found' });
     }
 
-    const data = {
-      ...req.body,
-      receiptImage: req.file ? req.file.path : receipt.receiptImage
-    };
+    let receiptImageUrl = receipt.receiptImage;
 
-    // If new image is uploaded, delete the old one if it exists
-    if (req.file && receipt.receiptImage) {
-      fs.unlink(receipt.receiptImage, (err) => {
-        if (err) console.error('Error deleting old receipt image:', err);
+    // If a new file is uploaded, upload to Vercel Blob and delete the old one
+    if (req.file) {
+      const { buffer, originalname } = req.file;
+      const blob = await put(`receipts/${Date.now()}_${originalname}`, buffer, {
+        access: 'public',
       });
+      receiptImageUrl = blob.url;
+
+      // Delete the old file from Vercel Blob if it exists
+      if (receipt.receiptImage) {
+        await del(receipt.receiptImage);
+      }
     }
 
-    const updatedReceipt = await Receipt.findByIdAndUpdate(id, data, { 
-      new: true, 
-      runValidators: true 
+    const data = {
+      ...req.body,
+      receiptImage: receiptImageUrl,
+    };
+
+    const updatedReceipt = await Receipt.findByIdAndUpdate(id, data, {
+      new: true,
+      runValidators: true,
     });
 
     res.json(updatedReceipt);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 };
 
 // Delete receipt
-exports.deleteReceipt = async (req, res) => {
 
+exports.deleteReceipt = async (req, res) => {
   try {
     const { id } = req.params;
     const receipt = await Receipt.findOne({ _id: id, user: req.user.userId });
@@ -90,17 +105,17 @@ exports.deleteReceipt = async (req, res) => {
       return res.status(404).json({ error: 'Receipt not found' });
     }
 
-    // Delete associated image file if it exists
+    // Delete the file from Vercel Blob if it exists
     if (receipt.receiptImage) {
-      fs.unlink(receipt.receiptImage, (err) => {
-        if (err) console.error('Error deleting receipt image:', err);
-      });
+      await del(receipt.receiptImage);
     }
 
     await Receipt.findByIdAndDelete(id);
     res.json({ message: 'Receipt deleted successfully' });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 };
+
 
