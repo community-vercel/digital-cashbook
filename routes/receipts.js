@@ -5,7 +5,7 @@ const auth = require('../middleware/auth');
 
 router.post('/', auth, receiptController.uploadReceiptImage, receiptController.createReceipt);
 router.get('/', auth, receiptController.getReceipts);
-// router.put('/:id', auth, receiptController.uploadReceiptImage, receiptController.updateReceipt);
-// router.delete('/:id', auth, receiptController.deleteReceipt);
+router.put('/:id', auth, receiptController.uploadReceiptImage, receiptController.updateReceipt);
+router.delete('/:id', auth, receiptController.deleteReceipt);
 
 module.exports = router;

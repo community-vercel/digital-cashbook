@@ -69,7 +69,7 @@ exports.getRecurringSuggestions = async (req, res) => {
     const recurringPayments = await Payment.find({
       user: req.user.userId,
       isRecurring: true,
-    }).select('description category amount');
+    }).select('description category type amount');
     res.json(recurringPayments);
   } catch (error) {
     res.status(400).json({ error: error.message });
