@@ -1,121 +1,157 @@
 const Receipt = require('../models/Receipt');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs'); // Add fs for file deletion
+
+const Customer = require('../models/Customer');
 const { put, del } = require('@vercel/blob');
 
-const storage = multer.memoryStorage();
-exports.uploadReceiptImage = multer({ storage }).single('receiptImage');
-// Configure Multer storage
+exports.addReceipt = async (req, res) => {
+  const { customerId, customerName, phone, amount, description, category, type, isRecurring, date,user } = req.body;
+  let receiptImage = null;
 
-
-// Middleware to handle file uploads
-
-// Create receipt
-exports.createReceipt = async (req, res) => {
   try {
-    let receiptImageUrl = null;
-
-    // If a file is uploaded, store it in Vercel Blob
-    if (req.file) {
-      const { buffer, originalname } = req.file;
-      const blob = await put(`receipts/${Date.now()}_${originalname}`, buffer, {
-        access: 'public', // Set to 'private' if you want restricted access
+    // Handle file upload to Vercel Blob
+    if (req.files && req.files.receiptImage) {
+      const file = req.files.receiptImage;
+      const fileName = `${Date.now()}-${file.name}`;
+      const { url } = await put(`receipts/${fileName}`, file.data, {
+        access: 'public',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
       });
-      receiptImageUrl = blob.url; // Get the URL of the uploaded file
+      receiptImage = url;
     }
 
-    const data = {
-      ...req.body,
-      receiptImage: receiptImageUrl,
-      user: req.body.user, // Assuming auth middleware provides user ID
-    };
+    let customer;
+    if (customerId) {
+      customer = await Customer.findById(customerId);
+    
+    } else if (customerName) {
+      customer = await Customer.findOne({ userId: req.user.id, name: customerName });
+      if (!customer) {
+        customer = new Customer({ userId: req.user.id, name: customerName, phone });
+        await customer.save();
+      }
+    } else {
+      return res.status(400).json({ message: 'Customer ID or name required' });
+    }
 
-    const newReceipt = await Receipt.create(data);
-    res.status(201).json(newReceipt);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    const receipt = new Receipt({
+      userId: user,
+      customerId: customer._id,
+      amount,
+      description,
+      category,
+      type,
+      isRecurring,
+      receiptImage,
+      date: date || Date.now(),
+    });
+    await receipt.save();
+
+    customer.balance += parseFloat(amount);
+    await customer.save();
+
+    res.json({ receipt, customer });
+  } catch (error) {
+    console.error('Error in addReceipt:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Get all receipts (for authenticated user)
-exports.getReceipts = async (req, res) => {
-            console.log('Received request to create receipt:', req.user.userId);
-
+exports.getuserReceipts = async (req, res) => {
   try {
-    const receipts = await Receipt.find({ user: req.user.userId }).sort({ date: -1 });
+    const { startDate, endDate, category, customerId } = req.query;
+    const query = { userId: req.user.id };
+    if (startDate && endDate) {
+      query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    }
+    if (category) query.category = category;
+    if (customerId) query.customerId = customerId;
+    const receipts = await Receipt.find(query).sort({ date: -1 }).populate('customerId', 'name');
     res.json(receipts);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error('Error in getReceipts:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Update receipt
+exports.getReceipts = async (req, res) => {
+  try {
+    const { startDate, endDate, category, customerId } = req.query;
+    const query = {  };
+    if (startDate && endDate) {
+      query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    }
+    if (category) query.category = category;
+    if (customerId) query.customerId = customerId;
+    const receipts = await Receipt.find(query).sort({ date: -1 }).populate('customerId', 'name');
+    res.json(receipts);
+  } catch (error) {
+    console.error('Error in getReceipts:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 exports.updateReceipt = async (req, res) => {
   try {
-    const { id } = req.params;
-    const receipt = await Receipt.findOne({ _id: id, user: req.body.user });
-
-    if (!receipt) {
-      return res.status(404).json({ error: 'Receipt not found' });
-    }
-
-    let receiptImageUrl = receipt.receiptImage;
-
-    // If a new file is uploaded, upload to Vercel Blob and delete the old one
-    if (req.file) {
-      const { buffer, originalname } = req.file;
-      const blob = await put(`receipts/${Date.now()}_${originalname}`, buffer, {
+    let receiptImage = req.body.receiptImage;
+    if (req.files && req.files.receiptImage) {
+      const file = req.files.receiptImage;
+      const fileName = `${Date.now()}-${file.name}`;
+      const { url } = await put(`receipts/${fileName}`, file.data, {
         access: 'public',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
       });
-      receiptImageUrl = blob.url;
+      receiptImage = url;
 
-      // Delete the old file from Vercel Blob if it exists
-      if (receipt.receiptImage) {
-        await del(receipt.receiptImage);
+      // Delete old image from Vercel Blob if it exists
+      const existingReceipt = await Receipt.findById(req.params.id);
+      if (existingReceipt.receiptImage) {
+        await del(existingReceipt.receiptImage, {
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
       }
     }
 
-    const data = {
-      ...req.body,
-      receiptImage: receiptImageUrl,
-    };
-
-    const updatedReceipt = await Receipt.findByIdAndUpdate(id, data, {
-      new: true,
-      runValidators: true,
-    });
-
-    res.json(updatedReceipt);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    const receipt = await Receipt.findOneAndUpdate(
+      { _id: req.params.id },
+      { ...req.body, receiptImage, date: req.body.date || Date.now() },
+      { new: true }
+    ).populate('customerId', 'name');
+    if (!receipt) return res.status(404).json({ message: 'Receipt not found' });
+    res.json(receipt);
+  } catch (error) {
+    console.error('Error in updateReceipt:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
-
-// Delete receipt
 
 exports.deleteReceipt = async (req, res) => {
   try {
-    const { id } = req.params;
-    const receipt = await Receipt.findOne({ _id: id, user: req.user.userId });
+    const receipt = await Receipt.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
+    if (!receipt) return res.status(404).json({ message: 'Receipt not found' });
 
-    if (!receipt) {
-      return res.status(404).json({ error: 'Receipt not found' });
-    }
-
-    // Delete the file from Vercel Blob if it exists
+    // Delete image from Vercel Blob if it exists
     if (receipt.receiptImage) {
-      await del(receipt.receiptImage);
+      await del(receipt.receiptImage, {
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+      });
     }
 
-    await Receipt.findByIdAndDelete(id);
-    res.json({ message: 'Receipt deleted successfully' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    res.json({ message: 'Receipt deleted' });
+  } catch (error) {
+    console.error('Error in deleteReceipt:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-
+exports.getRecurringSuggestions = async (req, res) => {
+  try {
+    const recurringReceipts = await Receipt.find({
+      userId: req.user.id,
+      isRecurring: true,
+    }).select('description category type amount');
+    res.json(recurringReceipts);
+  } catch (error) {
+    console.error('Error in getRecurringSuggestions:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
