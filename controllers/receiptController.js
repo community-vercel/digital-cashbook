@@ -82,7 +82,9 @@ exports.getReceipts = async (req, res) => {
     }
     if (category) query.category = category;
     if (customerId) query.customerId = customerId;
-    const receipts = await Receipt.find(query).sort({ date: -1 }).populate('customerId', 'name');
+    const receipts = await Receipt.find(query)
+      .sort({ createdAt: -1 }) // Sort by newest first
+      .populate('customerId', 'name');
     res.json(receipts);
   } catch (error) {
     console.error('Error in getReceipts:', error);

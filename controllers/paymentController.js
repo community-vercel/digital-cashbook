@@ -58,13 +58,40 @@ exports.addPayment = async (req, res) => {
 exports.getPayments = async (req, res) => {
   try {
     const { startDate, endDate, category, customerId } = req.query;
-    const query = { };
+    const query = {};
+
+    // Validate and filter by timestamp range
     if (startDate && endDate) {
-      query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      // Check if dates are valid
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({ message: 'Invalid startDate or endDate format' });
+      }
+
+      // Ensure endDate includes the entire day if needed (optional)
+      // end.setHours(23, 59, 59, 999); // Uncomment if you want to include the full day
+
+      query.date = { $gte: start, $lte: end };
     }
+
+    // Filter by category
     if (category) query.category = category;
-    if (customerId) query.customerId = customerId;
-    const payments = await Payment.find(query).sort({ date: -1 }).populate('customerId', 'name');
+
+    // Filter by customerId
+    if (customerId) {
+      // Validate customerId is a valid ObjectId
+      if (!mongoose.Types.ObjectId.isValid(customerId)) {
+        return res.status(400).json({ message: 'Invalid customerId' });
+      }
+      query.customerId = customerId;
+    }
+
+    const payments = await Payment.find(query)
+      .sort({createdAt: -1 }) // Sort by newest first
+      .populate('customerId', 'name');
+
     res.json(payments);
   } catch (error) {
     console.error('Error in getPayments:', error);
