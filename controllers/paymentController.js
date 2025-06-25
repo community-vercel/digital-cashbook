@@ -88,6 +88,7 @@ exports.getPayments = async (req, res) => {
       query.customerId = customerId;
     }
 
+    
     const payments = await Payment.find(query)
       .sort({createdAt: -1 }) // Sort by newest first
       .populate('customerId', 'name');
