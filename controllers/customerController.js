@@ -57,10 +57,10 @@ exports.deleteCustomer = async (req, res) => {
     }
 
     // Optionally, delete associated payments and receipts
-    await Promise.all([
-      Payment.deleteMany({ customerId: req.params.id }),
-      Receipt.deleteMany({ customerId: req.params.id }),
-    ]);
+    // await Promise.all([
+    //   Payment.deleteMany({ customerId: req.params.id }),
+    //   Receipt.deleteMany({ customerId: req.params.id }),
+    // ]);
 
     res.json({ message: 'Customer deleted' });
   } catch (error) {

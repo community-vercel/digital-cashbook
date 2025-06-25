@@ -7,6 +7,8 @@ const receiptRoutes = require('./routes/receipts');
 const paymentRoutes = require('./routes/payments');
 const reportRoutes = require('./routes/reports');
 const customerRoutes = require('./routes/customers');
+const categoryRoutes = require('./routes/category');
+const settingRoutes = require('./routes/setting');
 const fileUpload = require('express-fileupload');
 
 require('dotenv').config();
@@ -43,6 +45,8 @@ app.use('/api/receipts', receiptRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/customers',customerRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/settings', settingRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

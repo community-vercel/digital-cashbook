@@ -7,26 +7,21 @@ const fs = require('fs').promises;
 const path = require('path');
 const { createWriteStream } = require('fs');
 const os = require('os');
-const User = require('../models/User'); // Assuming User model for role checking
+const User = require('../models/User');
 
 exports.getSummaryReport = async (req, res) => {
   try {
-
-
-    
-    
-    const { startDate, endDate, format, customerId,role } = req.query;
+    const { startDate, endDate, format, customerId, role } = req.query;
 
     // Check if user is admin
     const user = await User.findById(req.user.id);
-   
     const isAdmin = role === 'admin';
 
     // Build query
     const query = {};
-    if (!isAdmin) {
-      query.userId = req.user.id; // Restrict to authenticated user for non-admins
-    }
+    // if (!isAdmin) {
+    //   query.userId = req.user.id; // Restrict to authenticated user for non-admins
+    // }
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -81,7 +76,9 @@ exports.getSummaryReport = async (req, res) => {
       balance: totalReceipts - totalPayments + openingBalance,
       openingBalance,
       categorySummary,
-      transactions: [...receipts.map(t => ({ ...t.toObject(), type: 'receipt' })), ...payments.map(t => ({ ...t.toObject(), type: 'payment' }))].sort((a, b) => new Date(b.date) - new Date(a.date)),
+      transactions: [...receipts.map(t => ({ ...t.toObject(), type: 'receipt' })), 
+                     ...payments.map(t => ({ ...t.toObject(), type: 'payment' }))]
+                     .sort((a, b) => new Date(b.date) - new Date(a.date)),
     };
 
     // Ensure temp directory exists
@@ -96,322 +93,344 @@ exports.getSummaryReport = async (req, res) => {
       const filePath = path.join(tempDir, filename);
       const writeStream = createWriteStream(filePath);
       doc.pipe(writeStream);
-try{
-      // Header function
-      const addHeader = () => {
-        try {
-          doc.image(path.join(__dirname, '../dcl.png'), 40, 20, { width: 80 });
-        } catch {
-          doc.font('Helvetica-Bold').fontSize(16).fillColor('#4f46e5').text('Your Company', 40, 25);
-        }
-        doc
-          .font('Helvetica-Bold')
-          .fontSize(14)
-          .fillColor('#1f2937')
-          .text('Financial Summary Report', 200, 25, { align: 'center' });
-        doc
-          .font('Helvetica')
-          .fontSize(8)
-          .fillColor('#6b7280')
-          .text('YourApp Financial Services', 200, 40, { align: 'center' })
-          .text('123 Business St, City, Country', 200, 48, { align: 'center' });
-        if (customerId && reportData.transactions[0]?.customerId?.name) {
-          doc.text(`Customer: ${reportData.transactions[0].customerId.name}`, 200, 56, { align: 'center' });
-        } else if (isAdmin) {
-          doc.text('All Users', 200, 56, { align: 'center' });
-        }
-        doc.moveTo(40, 65).lineTo(555, 65).strokeColor('#e5e7eb').stroke();
-      };
 
-      // Footer function
-      const addFooter = (pageNumber) => {
-        const pageHeight = doc.page.height;
-        doc
-          .moveTo(40, pageHeight - 50)
-          .lineTo(555, pageHeight - 50)
-          .strokeColor('#e5e7eb')
-          .stroke();
-        doc
-          .font('Helvetica')
-          .fontSize(8)
-          .fillColor('#6b7280')
-          .text('YourApp Financial Services', 40, pageHeight - 40, { align: 'left' })
-          .text(`Page ${pageNumber}`, 555, pageHeight - 40, { align: 'right' });
-      };
-
-      addHeader();
-
-      let currentY = 80;
-
-      doc
-        .font('Helvetica')
-        .fontSize(10)
-        .fillColor('#6b7280')
-        .text(`Generated on: ${new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })}`, 40, currentY);
-
-      currentY += 20;
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(12)
-        .fillColor('#1f2937')
-        .text(
-          `Period: ${startDate ? new Date(startDate).toLocaleDateString('en-US') : 'N/A'} to ${
-            endDate ? new Date(endDate).toLocaleDateString('en-US') : 'N/A'
-          }`,
-          40,
-          currentY
-        );
-
-      currentY += 30;
-
-      doc
-        .rect(40, currentY, 515, 105)
-        .fillAndStroke('#f9fafb', '#d1d5db');
-
-      doc
-        .fillColor('#1f2937')
-        .font('Helvetica-Bold')
-        .fontSize(12)
-        .text('Summary', 50, currentY + 10);
-
-      doc
-        .font('Helvetica')
-        .fontSize(11)
-        .fillColor('#374151')
-        .text(`Opening Balance: $${cleanAmount(openingBalance).toFixed(2)}`, 50, currentY + 30)
-        .text(`Total Receipts: $${cleanAmount(totalReceipts).toFixed(2)}`, 50, currentY + 45)
-        .text(`Total Payments: $${cleanAmount(totalPayments).toFixed(2)}`, 50, currentY + 60)
-        .fillColor(reportData.balance >= 0 ? '#10b981' : '#ef4444')
-        .font('Helvetica-Bold')
-        .text(`Closing Balance: $${cleanAmount(reportData.balance).toFixed(2)}`, 50, currentY + 75);
-
-      currentY += 125;
-
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#1f2937').text('Category Summary', 40, currentY);
-      currentY += 20;
-
-      const tableTop = currentY;
-      const tableLeft = 40;
-      const colWidths = [350, 165];
-      const rowHeight = 25;
-
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(11)
-        .fillColor('#ffffff')
-        .rect(tableLeft, tableTop, colWidths[0], rowHeight)
-        .fill('#4f46e5')
-        .rect(tableLeft + colWidths[0], tableTop, colWidths[1], rowHeight)
-        .fill('#4f46e5');
-
-      doc
-        .fillColor('#ffffff')
-        .text('Category', tableLeft + 10, tableTop + 8)
-        .text('Amount', tableLeft + colWidths[0] + 10, tableTop + 8, { align: 'right' });
-
-      doc
-        .rect(tableLeft, tableTop, colWidths[0], rowHeight)
-        .rect(tableLeft + colWidths[0], tableTop, colWidths[1], rowHeight)
-        .strokeColor('#d1d5db')
-        .stroke();
-
-      Object.entries(categorySummary).forEach(([category, amount], index) => {
-        const y = tableTop + rowHeight * (index + 1);
-
-        if (y + rowHeight > doc.page.height - 100) {
-          doc.addPage();
-          currentY = 80;
-          addHeader();
-          addFooter(doc.page.number);
+      try {
+        // Header function
+        const addHeader = () => {
+          try {
+            doc.image(path.join(__dirname, '../dcl.png'), 40, 0, { width: 80 });
+          } catch {
+            doc.font('Helvetica-Bold').fontSize(16).fillColor('#4f46e5').text('Your Company', 40, 25);
+          }
           doc
             .font('Helvetica-Bold')
-            .fontSize(11)
-            .fillColor('#ffffff')
-            .rect(tableLeft, currentY, colWidths[0], rowHeight)
-            .fill('#4f46e5')
-            .rect(tableLeft + colWidths[0], currentY, colWidths[1], rowHeight)
-            .fill('#4f46e5')
-            .fillColor('#ffffff')
-            .text('Category', tableLeft + 10, currentY + 8)
-            .text('Amount', tableLeft + colWidths[0] + 10, currentY + 8, { align: 'right' });
-          currentY += rowHeight;
-        }
+            .fontSize(14)
+            .fillColor('#1f2937')
+            .text('Financial Summary Report', 200, 25, { align: 'center' });
+          
+          if (customerId && receipts[0]?.customerId?.name) {
+            doc.text(`Customer: ${receipts[0].customerId.name}`, 200, 45, { align: 'center' });
+          } else if (isAdmin) {
+            doc.text('All Users', 200, 45, { align: 'center' });
+          }
+          
+          doc.moveTo(40, 55).lineTo(555, 55).strokeColor('#e5e7eb').stroke();
+        };
+
+        // Footer function
+        const addFooter = (pageNumber) => {
+          const pageHeight = doc.page.height;
+          doc
+            .moveTo(40, pageHeight - 50)
+            .lineTo(555, pageHeight - 50)
+            .strokeColor('#e5e7eb')
+            .stroke();
+          doc
+            .font('Helvetica')
+            .fontSize(8)
+            .fillColor('#6b7280')
+            .text('YourApp Financial Services', 40, pageHeight - 40, { align: 'left' })
+            .text(`Page ${pageNumber}`, 555, pageHeight - 40, { align: 'right' });
+        };
+
+        addHeader();
+        let currentY = 70;
+
+        // Report period
+        doc
+          .font('Helvetica')
+          .fontSize(10)
+          .fillColor('#6b7280')
+          .text(`Generated on: ${new Date().toLocaleDateString()}`, 40, currentY);
+        
+        currentY += 20;
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(12)
+          .fillColor('#1f2937')
+          .text(
+            `Period: ${startDate ? new Date(startDate).toLocaleDateString() : 'N/A'} to ${
+              endDate ? new Date(endDate).toLocaleDateString() : 'N/A'
+            }`,
+            40,
+            currentY
+          );
+
+        currentY += 30;
+
+        // Summary box
+        doc
+          .rect(40, currentY, 515, 105)
+          .fillAndStroke('#f9fafb', '#d1d5db');
+
+        doc
+          .fillColor('#1f2937')
+          .font('Helvetica-Bold')
+          .fontSize(12)
+          .text('Summary', 50, currentY + 10);
 
         doc
           .font('Helvetica')
           .fontSize(11)
           .fillColor('#374151')
-          .rect(tableLeft, y, colWidths[0], rowHeight)
-          .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-          .rect(tableLeft + colWidths[0], y, colWidths[1], rowHeight)
-          .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff');
+          .text(`Opening Balance:  ${cleanAmount(openingBalance).toFixed(2)}`, 50, currentY + 30)
+          .text(`Total Credits:  ${cleanAmount(totalReceipts).toFixed(2)}`, 50, currentY + 45)
+          .text(`Total Debits:  ${cleanAmount(totalPayments).toFixed(2)}`, 50, currentY + 60)
+          .fillColor(reportData.balance >= 0 ? '#10b981' : '#ef4444')
+          .font('Helvetica-Bold')
+          .text(`Closing Balance:  ${cleanAmount(reportData.balance).toFixed(2)}`, 50, currentY + 75);
 
-        doc
-          .text(category || 'Uncategorized', tableLeft + 10, y + 8)
-          .fillColor(cleanAmount(amount) >= 0 ? '#10b981' : '#ef4444')
-          .text(`$${cleanAmount(amount).toFixed(2)}`, tableLeft + colWidths[0] + 10, y + 8, { align: 'right' });
+        currentY += 125;
 
-        doc
-          .rect(tableLeft, y, colWidths[0], rowHeight)
-          .rect(tableLeft + colWidths[0], y, colWidths[1], rowHeight)
-          .strokeColor('#d1d5db')
-          .stroke();
-      });
-
-      currentY = tableTop + rowHeight * (Object.keys(categorySummary).length + 1) + 20;
-
-      if (reportData.transactions.length > 0) {
-        if (currentY > doc.page.height - 200) {
-          doc.addPage();
-          currentY = 80;
-          addHeader();
-          addFooter(doc.page.number);
-        }
-
-        doc.font('Helvetica-Bold').fontSize(12).fillColor('#1f2937').text('Transactions', 40, currentY);
+        // Category Summary
+        doc.font('Helvetica-Bold').fontSize(12).fillColor('#1f2937').text('Category Summary', 40, currentY);
         currentY += 20;
 
-        const txColWidths = [80, 80, 120, 80, 80, 75];
-        const txRowHeight = 25;
-        let txTableTop = currentY;
+        const tableTop = currentY;
+        const tableLeft = 40;
+        const colWidths = [350, 165];
+        const rowHeight = 25;
 
-        const addTxTableHeader = () => {
-          doc
-            .font('Helvetica-Bold')
-            .fontSize(11)
-            .fillColor('#ffffff')
-            .rect(tableLeft, txTableTop, txColWidths[0], txRowHeight)
-            .fill('#4f46e5')
-            .rect(tableLeft + txColWidths[0], txTableTop, txColWidths[1], txRowHeight)
-            .fill('#4f46e5')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1], txTableTop, txColWidths[2], txRowHeight)
-            .fill('#4f46e5')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], txTableTop, txColWidths[3], txRowHeight)
-            .fill('#4f46e5')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], txTableTop, txColWidths[4], txRowHeight)
-            .fill('#4f46e5')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], txTableTop, txColWidths[5], txRowHeight)
-            .fill('#4f46e5');
+        // Category table header
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(11)
+          .fillColor('#ffffff')
+          .rect(tableLeft, tableTop, colWidths[0], rowHeight)
+          .fill('#4f46e5')
+          .rect(tableLeft + colWidths[0], tableTop, colWidths[1], rowHeight)
+          .fill('#4f46e5');
 
-          doc
-            .fillColor('#ffffff')
-            .text('Type', tableLeft + 10, txTableTop + 8, { align: 'center' })
-            .text('Date', tableLeft + txColWidths[0] + 10, txTableTop + 8, { align: 'center' })
-            .text('Customer', tableLeft + txColWidths[0] + txColWidths[1] + 10, txTableTop + 8, { align: 'center' })
-            .text('Description', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 10, txTableTop + 8, { align: 'center' })
-            .text('Category', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 10, txTableTop + 8, { align: 'center' })
-            .text('Amount', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 10, txTableTop + 8, { align: 'right' });
+        doc
+          .fillColor('#ffffff')
+          .text('Category', tableLeft + 10, tableTop + 8)
+          .text('Amount', tableLeft + colWidths[0] + 10, tableTop + 8, { align: 'right' });
 
-          doc
-            .rect(tableLeft, txTableTop, txColWidths[0], txRowHeight)
-            .rect(tableLeft + txColWidths[0], txTableTop, txColWidths[1], txRowHeight)
-            .rect(tableLeft + txColWidths[0] + txColWidths[1], txTableTop, txColWidths[2], txRowHeight)
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], txTableTop, txColWidths[3], txRowHeight)
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], txTableTop, txColWidths[4], txRowHeight)
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], txTableTop, txColWidths[5], txRowHeight)
-            .strokeColor('#d1d5db')
-            .stroke();
-        };
+        doc
+          .rect(tableLeft, tableTop, colWidths[0], rowHeight)
+          .rect(tableLeft + colWidths[0], tableTop, colWidths[1], rowHeight)
+          .strokeColor('#d1d5db')
+          .stroke();
 
-        addTxTableHeader();
-        currentY += txRowHeight;
+        // Category table rows
+        Object.entries(categorySummary).forEach(([category, amount], index) => {
+          const y = tableTop + rowHeight * (index + 1);
 
-        reportData.transactions.forEach((t, index) => {
-          const y = txTableTop + txRowHeight * (index + 1);
-
-          if (y + txRowHeight > doc.page.height - 100) {
+          if (y + rowHeight > doc.page.height - 100) {
             doc.addPage();
             currentY = 80;
-            txTableTop = currentY;
             addHeader();
-            // addFooter(doc.page.number);
-            addTxTableHeader();
-            currentY += txRowHeight;
+            addFooter(doc.page.number);
+            doc
+              .font('Helvetica-Bold')
+              .fontSize(11)
+              .fillColor('#ffffff')
+              .rect(tableLeft, currentY, colWidths[0], rowHeight)
+              .fill('#4f46e5')
+              .rect(tableLeft + colWidths[0], currentY, colWidths[1], rowHeight)
+              .fill('#4f46e5')
+              .fillColor('#ffffff')
+              .text('Category', tableLeft + 10, currentY + 8)
+              .text('Amount', tableLeft + colWidths[0] + 10, currentY + 8, { align: 'right' });
+            currentY += rowHeight;
           }
 
           doc
             .font('Helvetica')
             .fontSize(11)
             .fillColor('#374151')
-            .rect(tableLeft, y, txColWidths[0], txRowHeight)
+            .rect(tableLeft, y, colWidths[0], rowHeight)
             .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-            .rect(tableLeft + txColWidths[0], y, txColWidths[1], txRowHeight)
-            .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1], y, txColWidths[2], txRowHeight)
-            .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], y, txColWidths[3], txRowHeight)
-            .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], y, txColWidths[4], txRowHeight)
-            .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], y, txColWidths[5], txRowHeight)
+            .rect(tableLeft + colWidths[0], y, colWidths[1], rowHeight)
             .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff');
 
           doc
             .fillColor('#374151')
-            .text(t.type === 'receipt' ? 'Receipt' : 'Payment', tableLeft + 10, y + 8, { align: 'center' })
-            .text(t.date ? t.date.toISOString().split('T')[0] : 'N/A', tableLeft + txColWidths[0] + 10, y + 8, { align: 'center' })
-            .text(t.customerId?.name || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + 10, y + 8, { align: 'center' })
-            .text(t.description || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 10, y + 8, { width: txColWidths[3] - 20, ellipsis: true })
-            .text(t.category || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 10, y + 8, { align: 'center' })
-            .fillColor(t.type === 'receipt' ? '#10b981' : '#ef4444')
-            .text(`$${cleanAmount(t.amount).toFixed(2)}`, tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 10, y + 8, { align: 'right' });
+            .text(category || 'Uncategorized', tableLeft + 10, y + 8)
+            .fillColor(cleanAmount(amount) >= 0 ? '#10b981' : '#ef4444')
+            .text(` ${cleanAmount(amount).toFixed(2)}`, tableLeft + colWidths[0] + 10, y + 8, { align: 'right' });
 
           doc
-            .rect(tableLeft, y, txColWidths[0], txRowHeight)
-            .rect(tableLeft + txColWidths[0], y, txColWidths[1], txRowHeight)
-            .rect(tableLeft + txColWidths[0] + txColWidths[1], y, txColWidths[2], txRowHeight)
-            .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], y, txColWidths[3], txRowHeight)
-            // .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], txRowHeight)
-            // .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], txRowHeight)
+            .rect(tableLeft, y, colWidths[0], rowHeight)
+            .rect(tableLeft + colWidths[0], y, colWidths[1], rowHeight)
             .strokeColor('#d1d5db')
             .stroke();
         });
-      }
 
-      doc.end();
+        currentY = tableTop + rowHeight * (Object.keys(categorySummary).length + 1) + 20;
 
-      // Wait for PDF to finish writing
-      await new Promise((resolve, reject) => {
-        writeStream.on('finish', resolve);
-        writeStream.on('error', (err) => {
-          console.error('Error writing PDF stream:', err);
-          reject(err);
-        });
-      });
-
-      // Verify file exists before reading
-      try {
-        await fs.access(filePath);
-      } catch (err) {
-        console.error('File does not exist:', filePath);
-        throw new Error('Failed to create PDF file');
-      }
-
-      // Read the PDF file and upload to Vercel Blob
-      const pdfBuffer = await fs.readFile(filePath);
-      const blob = await put(`reports/${filename}`, pdfBuffer, {
-        access: 'public',
-        addRandomSuffix: true,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
-
-      // Clean up temporary file
-      await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
-
-      res.json({ url: blob.url });
-
-    }
-    catch (pdfError) {
-  console.error('PDF Generation Error:', pdfError);
-  // Clean up any temporary files
-  if (filePath) {
-    await fs.unlink(filePath).catch(cleanupError => {
-      console.error('Error cleaning up PDF temp file:', cleanupError);
-    });
+        // Transactions section
+        if (reportData.transactions.length === 0) {
+  doc
+    .font('Helvetica')
+    .fontSize(12)
+    .fillColor('#374151')
+    .text('No transactions found for the selected period.', 40, currentY);
+  currentY += 20;
+} else {
+  // Check if there's enough space for the table header and at least one row
+  if (currentY + 50 > doc.page.height - 50) {
+    doc.addPage();
+    currentY = 80;
+    addHeader();
+    addFooter(doc.page.number + 1);
   }
-  throw new Error('Failed to generate PDF');
+
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(12)
+    .fillColor('#1f2937')
+    .text('Transactions', 40, currentY);
+  currentY += 20;
+
+  const txColWidths = [80, 80, 120, 90, 80, 75]; // Adjusted to sum to 503px
+  const txRowHeight = 25;
+  const tableLeft = 40; // Consistent with other tables
+  let txTableTop = currentY;
+
+  const addTxTableHeader = () => {
+    // Draw header background
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor('#ffffff')
+      .rect(tableLeft, txTableTop, txColWidths[0], txRowHeight)
+      .fill('#4f46e5')
+      .rect(tableLeft + txColWidths[0], txTableTop, txColWidths[1], txRowHeight)
+      .fill('#4f46e5')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1], txTableTop, txColWidths[2], txRowHeight)
+      .fill('#4f46e5')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], txTableTop, txColWidths[3], txRowHeight)
+      .fill('#4f46e5')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], txTableTop, txColWidths[4], txRowHeight)
+      .fill('#4f46e5')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], txTableTop, txColWidths[5], txRowHeight)
+      .fill('#4f46e5');
+
+    // Draw header text
+    doc
+      .fillColor('#ffffff')
+      .text('Type', tableLeft + 5, txTableTop + 8, { width: txColWidths[0] - 10, align: 'center' })
+      .text('Date', tableLeft + txColWidths[0] + 5, txTableTop + 8, { width: txColWidths[1] - 10, align: 'center' })
+      .text('Customer', tableLeft + txColWidths[0] + txColWidths[1] + 5, txTableTop + 8, { width: txColWidths[2] - 10, align: 'center', ellipsis: true })
+      .text('Description', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 5, txTableTop + 8, { width: txColWidths[3] - 10, align: 'left', ellipsis: true })
+      .text('Category', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 5, txTableTop + 8, { width: txColWidths[4] - 10, align: 'center' })
+      .text('Amount', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 5, txTableTop + 8, { width: txColWidths[5] - 10, align: 'right' });
+
+    // Draw header borders
+    doc
+      .rect(tableLeft, txTableTop, txColWidths[0], txRowHeight)
+      .rect(tableLeft + txColWidths[0], txTableTop, txColWidths[1], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1], txTableTop, txColWidths[2], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], txTableTop, txColWidths[3], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], txTableTop, txColWidths[4], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], txTableTop, txColWidths[5], txRowHeight)
+      .strokeColor('#d1d5db')
+      .stroke();
+  };
+
+  addTxTableHeader();
+  currentY += txRowHeight;
+
+  console.log('Rendering transactions:', reportData.transactions.length);
+  reportData.transactions.forEach((t, index) => {
+    const y = txTableTop + txRowHeight * (index + 1);
+    console.log(`Transaction ${index + 1} - y: ${y}, currentY: ${currentY}`);
+
+    if (y + txRowHeight > doc.page.height - 50) {
+      doc.addPage();
+      currentY = 80;
+      txTableTop = currentY;
+      addHeader();
+      addFooter(doc.page.number + 1);
+      addTxTableHeader();
+      currentY += txRowHeight;
+    }
+
+    // Draw row background
+    doc
+      .font('Helvetica')
+      .fontSize(11)
+      .fillColor('#374151')
+      .rect(tableLeft, y, txColWidths[0], txRowHeight)
+      .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
+      .rect(tableLeft + txColWidths[0], y, txColWidths[1], txRowHeight)
+      .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1], y, txColWidths[2], txRowHeight)
+      .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], y, txColWidths[3], txRowHeight) // Fixed missing Description column
+      .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], y, txColWidths[4], txRowHeight)
+      .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], y, txColWidths[5], txRowHeight)
+      .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff');
+
+    // Draw row text
+    doc
+      .fillColor('#374151')
+      .text(t.type === 'receipt' ? 'Credit' : 'Debit', tableLeft + 5, y + 8, { width: txColWidths[0] - 10, align: 'center' })
+      .text(t.date ? new Date(t.date).toISOString().split('T')[0] : 'N/A', tableLeft + txColWidths[0] + 5, y + 8, { width: txColWidths[1] - 10, align: 'center' })
+      .text(t.customerId?.name || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + 5, y + 8, { width: txColWidths[2] - 10, align: 'center', ellipsis: true })
+      .text(t.description || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 5, y + 8, { width: txColWidths[3] - 10, align: 'left', ellipsis: true })
+      .text(t.category || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 2, y + 2, { width: txColWidths[4] - 2, align: 'center' })
+      .fillColor(t.type === 'receipt' ? '#10b981' : '#ef4444')
+      .text(` ${cleanAmount(t.amount).toFixed(2)}`, tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 5, y + 8, { width: txColWidths[5] - 10, align: 'right' });
+
+    // Draw row borders
+    doc
+      .rect(tableLeft, y, txColWidths[0], txRowHeight)
+      .rect(tableLeft + txColWidths[0], y, txColWidths[1], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1], y, txColWidths[2], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], y, txColWidths[3], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], y, txColWidths[4], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], y, txColWidths[5], txRowHeight)
+      .strokeColor('#d1d5db')
+      .stroke();
+  });
 }
 
+        doc.end();
+
+        // Wait for PDF to finish writing
+        await new Promise((resolve, reject) => {
+          writeStream.on('finish', resolve);
+          writeStream.on('error', (err) => {
+            console.error('Error writing PDF stream:', err);
+            reject(err);
+          });
+        });
+
+        // Verify file exists before reading
+        try {
+          await fs.access(filePath);
+        } catch (err) {
+          console.error('File does not exist:', filePath);
+          throw new Error('Failed to create PDF file');
+        }
+
+        // Read the PDF file and upload to Vercel Blob
+        const pdfBuffer = await fs.readFile(filePath);
+        const blob = await put(`reports/${filename}`, pdfBuffer, {
+          access: 'public',
+          addRandomSuffix: true,
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+
+        // Clean up temporary file
+        await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
+
+        res.json({ url: blob.url });
+
+      } catch (pdfError) {
+        console.error('PDF Generation Error:', pdfError);
+        if (filePath) {
+          await fs.unlink(filePath).catch(cleanupError => {
+            console.error('Error cleaning up PDF temp file:', cleanupError);
+          });
+        }
+        throw new Error('Failed to generate PDF');
+      }
+    
     } else if (format === 'excel') {
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'YourApp';
@@ -474,10 +493,10 @@ try{
         '',
         '',
       ]).font = { size: 11 };
-      worksheet.addRow(['Opening Balance', `$${cleanAmount(openingBalance).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FF374151' } };
-      worksheet.addRow(['Total Receipts', `$${cleanAmount(totalReceipts).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FF10B981' } };
-      worksheet.addRow(['Total Payments', `$${cleanAmount(totalPayments).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FFEF4444' } };
-      worksheet.addRow(['Closing Balance', `$${cleanAmount(reportData.balance).toFixed(2)}`, '', '', '', '']).font = {
+      worksheet.addRow(['Opening Balance', ` ${cleanAmount(openingBalance).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FF374151' } };
+      worksheet.addRow(['Total Credits', ` ${cleanAmount(totalReceipts).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FF10B981' } };
+      worksheet.addRow(['Total Debits', ` ${cleanAmount(totalPayments).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FFEF4444' } };
+      worksheet.addRow(['Closing Balance', ` ${cleanAmount(reportData.balance).toFixed(2)}`, '', '', '', '']).font = {
         size: 11,
         bold: true,
         color: { argb: reportData.balance >= 0 ? 'FF10B981' : 'FFEF4444' },
@@ -499,7 +518,7 @@ try{
       catHeaderRow.alignment = { horizontal: 'center', vertical: 'middle' };
       catHeaderRow.height = 25;
       Object.entries(categorySummary).forEach(([category, amount], index) => {
-        const row = worksheet.addRow([category, `$${cleanAmount(amount).toFixed(2)}`, '', '', '', '']);
+        const row = worksheet.addRow([category, ` ${cleanAmount(amount).toFixed(2)}`, '', '', '', '']);
         row.font = { size: 11 };
         row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFF9FAFB' : 'FFFFFFFF' } };
         row.getCell(2).font = { color: { argb: cleanAmount(amount) >= 0 ? 'FF10B981' : 'FFEF4444' } };
@@ -533,7 +552,7 @@ try{
           customer: t.customerId?.name || 'N/A',
           description: t.description || 'N/A',
           category: t.category || 'N/A',
-          amount: `$${cleanAmount(t.amount).toFixed(2)}`,
+          amount: ` ${cleanAmount(t.amount).toFixed(2)}`,
         });
         row.font = { size: 11 };
         row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFF9FAFB' : 'FFFFFFFF' } };

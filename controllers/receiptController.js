@@ -52,7 +52,7 @@ exports.addReceipt = async (req, res) => {
     res.json({ receipt, customer });
   } catch (error) {
     console.error('Error in addReceipt:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message:     `${error.message}` });
   }
 };
 

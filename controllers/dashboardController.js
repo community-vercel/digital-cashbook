@@ -27,7 +27,7 @@ exports.getDashboardData = async (req, res) => {
     const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
     // Calculate opening balance (sum of all transactions before startDate)
-    let openingBalanceQuery = { userId: req.user.id };
+    let openingBalanceQuery = {  };
     if (startDate) {
       openingBalanceQuery.date = { $lt: new Date(startDate) };
     }
