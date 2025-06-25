@@ -56,7 +56,6 @@ exports.deleteCustomer = async (req, res) => {
       return res.status(404).json({ message: 'Customer not found' });
     }
 
-    
     // Optionally, delete associated payments and receipts
     // await Promise.all([
     //   Payment.deleteMany({ customerId: req.params.id }),
