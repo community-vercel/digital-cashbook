@@ -260,7 +260,7 @@ exports.getSummaryReport = async (req, res) => {
         currentY = tableTop + rowHeight * (Object.keys(categorySummary).length + 1) + 20;
 
         // Transactions section
-        if (reportData.transactions.length === 0) {
+ if (reportData.transactions.length === 0) {
   doc
     .font('Helvetica')
     .fontSize(12)
@@ -268,12 +268,20 @@ exports.getSummaryReport = async (req, res) => {
     .text('No transactions found for the selected period.', 40, currentY);
   currentY += 20;
 } else {
-  // Check if there's enough space for the table header and at least one row
-  if (currentY + 50 > doc.page.height - 50) {
+  // Constants for layout
+  const txColWidths = [80, 80, 120, 90, 80, 75];
+  const txRowHeight = 25;
+  const tableLeft = 40;
+  const pageHeight = doc.page.height;
+  const topMargin = 40; // From doc = new PDFKit({ margin: 40 })
+  const bottomMargin = 60; // Reduced from 80 to allow more content
+  const usableHeight = pageHeight - topMargin - bottomMargin; // ~741 points for A4
+
+  // Check if there's enough space for the title, table header, and at least one row
+  if (currentY + 20 + txRowHeight + txRowHeight > usableHeight) {
     doc.addPage();
-    currentY = 80;
+    currentY = topMargin + 30; // Start below header
     addHeader();
-    addFooter(doc.page.number + 1);
   }
 
   doc
@@ -283,13 +291,9 @@ exports.getSummaryReport = async (req, res) => {
     .text('Transactions', 40, currentY);
   currentY += 20;
 
-  const txColWidths = [80, 80, 120, 90, 80, 75]; // Adjusted to sum to 503px
-  const txRowHeight = 25;
-  const tableLeft = 40; // Consistent with other tables
   let txTableTop = currentY;
 
   const addTxTableHeader = () => {
-    // Draw header background
     doc
       .font('Helvetica-Bold')
       .fontSize(11)
@@ -307,7 +311,6 @@ exports.getSummaryReport = async (req, res) => {
       .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], txTableTop, txColWidths[5], txRowHeight)
       .fill('#4f46e5');
 
-    // Draw header text
     doc
       .fillColor('#ffffff')
       .text('Type', tableLeft + 5, txTableTop + 8, { width: txColWidths[0] - 10, align: 'center' })
@@ -317,7 +320,6 @@ exports.getSummaryReport = async (req, res) => {
       .text('Category', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 5, txTableTop + 8, { width: txColWidths[4] - 10, align: 'center' })
       .text('Amount', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 5, txTableTop + 8, { width: txColWidths[5] - 10, align: 'right' });
 
-    // Draw header borders
     doc
       .rect(tableLeft, txTableTop, txColWidths[0], txRowHeight)
       .rect(tableLeft + txColWidths[0], txTableTop, txColWidths[1], txRowHeight)
@@ -334,61 +336,60 @@ exports.getSummaryReport = async (req, res) => {
 
   console.log('Rendering transactions:', reportData.transactions.length);
   reportData.transactions.forEach((t, index) => {
-    const y = txTableTop + txRowHeight * (index + 1);
-    console.log(`Transaction ${index + 1} - y: ${y}, currentY: ${currentY}`);
+    const y = currentY; // Use currentY for the row position
+    console.log(`Transaction ${index + 1} - y: ${y}, pageHeight: ${pageHeight}, usableHeight: ${usableHeight}`);
 
-    if (y + txRowHeight > doc.page.height - 50) {
+    // Check if the row would exceed the usable height
+    if (y + txRowHeight > usableHeight) {
       doc.addPage();
-      currentY = 80;
+      currentY = topMargin + 30; // Start below header
       txTableTop = currentY;
       addHeader();
-      addFooter(doc.page.number + 1);
       addTxTableHeader();
       currentY += txRowHeight;
+      console.log(`New page added for transaction ${index + 1}, reset currentY to ${currentY}`);
     }
 
-    // Draw row background
     doc
       .font('Helvetica')
       .fontSize(11)
       .fillColor('#374151')
-      .rect(tableLeft, y, txColWidths[0], txRowHeight)
+      .rect(tableLeft, currentY, txColWidths[0], txRowHeight)
       .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-      .rect(tableLeft + txColWidths[0], y, txColWidths[1], txRowHeight)
+      .rect(tableLeft + txColWidths[0], currentY, txColWidths[1], txRowHeight)
       .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-      .rect(tableLeft + txColWidths[0] + txColWidths[1], y, txColWidths[2], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1], currentY, txColWidths[2], txRowHeight)
       .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], y, txColWidths[3], txRowHeight) // Fixed missing Description column
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], currentY, txColWidths[3], txRowHeight)
       .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], y, txColWidths[4], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], currentY, txColWidths[4], txRowHeight)
       .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff')
-      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], y, txColWidths[5], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], currentY, txColWidths[5], txRowHeight)
       .fill(index % 2 === 0 ? '#f9fafb' : '#ffffff');
 
-    // Draw row text
     doc
       .fillColor('#374151')
-      .text(t.type === 'receipt' ? 'Credit' : 'Debit', tableLeft + 5, y + 8, { width: txColWidths[0] - 10, align: 'center' })
-      .text(t.date ? new Date(t.date).toISOString().split('T')[0] : 'N/A', tableLeft + txColWidths[0] + 5, y + 8, { width: txColWidths[1] - 10, align: 'center' })
-      .text(t.customerId?.name || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + 5, y + 8, { width: txColWidths[2] - 10, align: 'center', ellipsis: true })
-      .text(t.description || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 5, y + 8, { width: txColWidths[3] - 10, align: 'left', ellipsis: true })
-      .text(t.category || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 2, y + 2, { width: txColWidths[4] - 2, align: 'center' })
+      .text(t.type === 'receipt' ? 'Credit' : 'Debit', tableLeft + 5, currentY + 8, { width: txColWidths[0] - 10, align: 'center' })
+      .text(t.date ? new Date(t.date).toISOString().split('T')[0] : 'N/A', tableLeft + txColWidths[0] + 5, currentY + 8, { width: txColWidths[1] - 10, align: 'center' })
+      .text(t.customerId?.name || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + 5, currentY + 8, { width: txColWidths[2] - 10, align: 'center', ellipsis: true })
+      .text(t.description || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 5, currentY + 8, { width: txColWidths[3] - 10, align: 'left', ellipsis: true })
+      .text(t.category || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 5, currentY + 13, { width: txColWidths[4] - 5, align: 'center' })
       .fillColor(t.type === 'receipt' ? '#10b981' : '#ef4444')
-      .text(` ${cleanAmount(t.amount).toFixed(2)}`, tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 5, y + 8, { width: txColWidths[5] - 10, align: 'right' });
+      .text(` ${cleanAmount(t.amount).toFixed(2)}`, tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 5, currentY + 8, { width: txColWidths[5] - 10, align: 'right' });
 
-    // Draw row borders
     doc
-      .rect(tableLeft, y, txColWidths[0], txRowHeight)
-      .rect(tableLeft + txColWidths[0], y, txColWidths[1], txRowHeight)
-      .rect(tableLeft + txColWidths[0] + txColWidths[1], y, txColWidths[2], txRowHeight)
-      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], y, txColWidths[3], txRowHeight)
-      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], y, txColWidths[4], txRowHeight)
-      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], y, txColWidths[5], txRowHeight)
+      .rect(tableLeft, currentY, txColWidths[0], txRowHeight)
+      .rect(tableLeft + txColWidths[0], currentY, txColWidths[1], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1], currentY, txColWidths[2], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2], currentY, txColWidths[3], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3], currentY, txColWidths[4], txRowHeight)
+      .rect(tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4], currentY, txColWidths[5], txRowHeight)
       .strokeColor('#d1d5db')
       .stroke();
+
+    currentY += txRowHeight; // Increment currentY after rendering the row
   });
 }
-
         doc.end();
 
         // Wait for PDF to finish writing
