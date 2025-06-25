@@ -284,7 +284,6 @@ exports.getSummaryReport = async (req, res) => {
     addHeader();
   }
 
-  
   doc
     .font('Helvetica-Bold')
     .fontSize(12)
