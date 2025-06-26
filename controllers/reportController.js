@@ -8,11 +8,14 @@ const path = require('path');
 const { createWriteStream } = require('fs');
 const os = require('os');
 const User = require('../models/User');
+const Setting = require('../models/Setting'); // Adjust the path if needed
+const axios = require('axios');
 
 exports.getSummaryReport = async (req, res) => {
   try {
     const { startDate, endDate, format, customerId, role } = req.query;
-
+const settings = await Setting.findOne(); // Adjust query if settings are per-user or have multiple entries
+console.log('Settings:', settings);
     // Check if user is admin
     const user = await User.findById(req.user.id);
     const isAdmin = role === 'admin';
@@ -33,7 +36,15 @@ exports.getSummaryReport = async (req, res) => {
     if (customerId) {
       query.customerId = customerId;
     }
+const truncateDescription = (description) => {
 
+  if (!description) return 'N/A';
+  const words = description.trim().split(/\s+/);
+  if (words.length > 2) {
+    return words.slice(0, 10).join(' ') + ' ....';
+  }
+  return description;
+};
     // Fetch data
     const [receipts, payments] = await Promise.all([
       Receipt.find(query).populate('customerId', 'name'),
@@ -95,23 +106,46 @@ exports.getSummaryReport = async (req, res) => {
       doc.pipe(writeStream);
 
       try {
+
+         let logoBuffer;
+    try {
+      const response = await axios.get(settings.logo, { responseType: 'arraybuffer' });
+      logoBuffer = Buffer.from(response.data);
+    } catch (error) {
+      console.error('Error fetching logo image:', error.message);
+      logoBuffer = null; // Handle fallback in addHeader
+    }
         // Header function
         const addHeader = () => {
-          try {
-            doc.image(path.join(__dirname, '../dcl.png'), 40, 0, { width: 80 });
-          } catch {
-            doc.font('Helvetica-Bold').fontSize(16).fillColor('#4f46e5').text('Your Company', 40, 25);
-          }
+         if (logoBuffer) {
+        try {
+            const x = 40;
+const y = 4;
+const radius = 25; // Half of width/height
+const diameter = radius * 2;
+
+// Clip to a circular path
+doc.save(); // Save current graphics state
+doc.circle(x + radius, y + radius, radius).clip(); // Clip to a circle
+doc.image(logoBuffer, x, y, { width: diameter, height: diameter }); // Draw image inside the circle
+doc.restore(); 
+        } catch (error) {
+          console.error('Error rendering logo image:', error.message);
+          doc.font('Helvetica-Bold').fontSize(16).fillColor('#4f46e5').text('Your Company', 40, 25);
+        }
+      } else {
+        doc.font('Helvetica-Bold').fontSize(16).fillColor('#4f46e5').text('Your Company', 40, 25);
+      }
           doc
             .font('Helvetica-Bold')
             .fontSize(14)
             .fillColor('#1f2937')
-            .text('Financial Summary Report', 200, 25, { align: 'center' });
+            .text(settings.siteName, 160, 25, { align: 'center' });
           
           if (customerId && receipts[0]?.customerId?.name) {
             doc.text(`Customer: ${receipts[0].customerId.name}`, 200, 45, { align: 'center' });
           } else if (isAdmin) {
-            doc.text('All Users', 200, 45, { align: 'center' });
+            doc.text('All Users', 160, 45, { align: 'center' });
           }
           
           doc.moveTo(40, 55).lineTo(555, 55).strokeColor('#e5e7eb').stroke();
@@ -129,7 +163,7 @@ exports.getSummaryReport = async (req, res) => {
             .font('Helvetica')
             .fontSize(8)
             .fillColor('#6b7280')
-            .text('YourApp Financial Services', 40, pageHeight - 40, { align: 'left' })
+            .text(settings.siteName, 40, pageHeight - 40, { align: 'left' })
             .text(`Page ${pageNumber}`, 555, pageHeight - 40, { align: 'right' });
         };
 
@@ -284,7 +318,7 @@ exports.getSummaryReport = async (req, res) => {
     addHeader();
   }
 
-  
+
   doc
     .font('Helvetica-Bold')
     .fontSize(12)
@@ -373,8 +407,8 @@ exports.getSummaryReport = async (req, res) => {
       .text(t.type === 'receipt' ? 'Credit' : 'Debit', tableLeft + 5, currentY + 8, { width: txColWidths[0] - 10, align: 'center' })
       .text(t.date ? new Date(t.date).toISOString().split('T')[0] : 'N/A', tableLeft + txColWidths[0] + 5, currentY + 8, { width: txColWidths[1] - 10, align: 'center' })
       .text(t.customerId?.name || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + 5, currentY + 8, { width: txColWidths[2] - 10, align: 'center', ellipsis: true })
-      .text(t.description || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 5, currentY + 8, { width: txColWidths[3] - 10, align: 'left', ellipsis: true })
-      .text(t.category || 'N/A', tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 5, currentY + 13, { width: txColWidths[4] - 5, align: 'center' })
+    .text(truncateDescription(t.description), tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + 5, currentY + 8, { width: txColWidths[3] - 10, align: 'left', ellipsis: true })  
+    .text(truncateDescription(t.category || 'N/A'), tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + 5, currentY + 13, { width: txColWidths[4] - 5, align: 'center' })
       .fillColor(t.type === 'receipt' ? '#10b981' : '#ef4444')
       .text(` ${cleanAmount(t.amount).toFixed(2)}`, tableLeft + txColWidths[0] + txColWidths[1] + txColWidths[2] + txColWidths[3] + txColWidths[4] + 5, currentY + 8, { width: txColWidths[5] - 10, align: 'right' });
 
@@ -422,6 +456,7 @@ exports.getSummaryReport = async (req, res) => {
         await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
 
         res.json({ url: blob.url });
+    await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
 
       } catch (pdfError) {
         console.error('PDF Generation Error:', pdfError);
@@ -444,9 +479,16 @@ exports.getSummaryReport = async (req, res) => {
 
       // Header
       try {
-        const logoPath = path.join(__dirname, '../dcl.png');
-        await fs.access(logoPath);
-        const logoBuffer = await fs.readFile(logoPath);
+              let logoBuffer;
+    try {
+      const response = await axios.get(settings.logo, { responseType: 'arraybuffer' });
+      logoBuffer = Buffer.from(response.data);
+    } catch (error) {
+      console.error('Error fetching logo image:', error.message);
+      logoBuffer = null; // Handle fallback in addHeader
+    }
+    
+      
         const logo = workbook.addImage({
           buffer: logoBuffer,
           extension: 'png',
@@ -456,7 +498,7 @@ exports.getSummaryReport = async (req, res) => {
           ext: { width: 80, height: 80 },
         });
       } catch {
-        worksheet.addRow(['Your Company']).font = { size: 16, bold: true, color: { argb: 'FF4F46E5' } };
+        worksheet.addRow([settings.sitename]).font = { size: 16, bold: true, color: { argb: 'FF4F46E5' } };
         worksheet.mergeCells('A1:F1');
       }
 
