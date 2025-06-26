@@ -467,195 +467,319 @@ exports.getSummaryReport = async (req, res) => {
                 throw new Error('Failed to generate PDF');
             }
 
-        } else if (format === 'excel') {
-            const workbook = new ExcelJS.Workbook();
-            workbook.creator = 'YourApp';
-            workbook.created = new Date();
-            const worksheet = workbook.addWorksheet('Financial Report', {
-                properties: { tabColor: { argb: 'FF4F46E5' } },
-                pageSetup: { fitToPage: true, fitToWidth: 1, margins: { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75 } },
+        } 
+       else if (format === 'excel') {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'YourApp';
+    workbook.created = new Date();
+    const worksheet = workbook.addWorksheet('Financial Report', {
+        properties: { tabColor: { argb: 'FF4F46E5' } },
+        pageSetup: { fitToPage: true, fitToWidth: 1, margins: { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 } },
+    });
+
+    // Define a modern color palette
+    const colors = {
+        primary: 'FF4F46E5', // Indigo
+        secondary: 'FF1F2937', // Dark Gray
+        accent: 'FF10B981', // Green
+        warning: 'FFEF4444', // Red
+        background: 'FFF9FAFB', // Light Gray
+        header: 'FFE5E7EB', // Gray Header
+        text: 'FF374151', // Gray Text
+    };
+
+    // Helper function to apply borders
+    const applyBorders = (startRow, endRow, cols = ['A', 'B', 'C', 'D', 'E', 'F']) => {
+        for (let i = startRow; i <= endRow; i++) {
+            cols.forEach((col) => {
+                const cell = worksheet.getCell(`${col}${i}`);
+                cell.border = {
+                    top: { style: 'thin', color: { argb: colors.header } },
+                    left: { style: 'thin', color: { argb: colors.header } },
+                    bottom: { style: 'thin', color: { argb: colors.header } },
+                    right: { style: 'thin', color: { argb: colors.header } },
+                };
             });
+        }
+    };
 
-            // Header
-            try {
-                let logoBuffer;
-                try {
-                    const response = await axios.get(settings.logo, { responseType: 'arraybuffer' });
-                    logoBuffer = Buffer.from(response.data);
-                } catch (error) {
-                    console.error('Error fetching logo image:', error.message);
-                    logoBuffer = null; // Handle fallback in addHeader
-                }
-                const logo = workbook.addImage({
-                    buffer: logoBuffer,
-                    extension: 'png',
-                });
-                worksheet.addImage(logo, {
-                    tl: { col: 0, row: 0 },
-                    ext: { width: 80, height: 80 },
-                });
-            } catch {
-                worksheet.addRow([settings.sitename]).font = { size: 16, bold: true, color: { argb: 'FF4F46E5' } };
-                worksheet.mergeCells('A1:F1');
+    
+
+    // Report Title
+    // worksheet.mergeCells('C1:F1');
+    // let logoBuffer;
+    //     try {
+    //         const response = await axios.get(settings.logo, { responseType: 'arraybuffer' });
+    //         logoBuffer = Buffer.from(response.data);
+    //         const logo = workbook.addImage({
+    //             buffer: logoBuffer,
+    //             extension: 'png',
+    //         });
+    //         worksheet.addImage(logo, {
+    //             tl: { col: 0, row: 0 },
+    //             ext: { width: 100, height: 100 }, // Slightly larger logo
+    //             editAs: 'oneCell',
+    //         });
+    //         worksheet.getRow(1).height = 80; 
+    //         } catch (error) {
+    //         console.error('Error fetching logo image:', error.message);
+    //         worksheet.getCell('A1').value = settings.siteName || 'Your Company';
+    //         worksheet.getCell('A1').font = { name: 'Calibri', size: 18, bold: true, color: { argb: colors.primary } };
+    //         worksheet.mergeCells('A1:B1');
+    //         worksheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+    //     }
+    
+   // Header with Logo and Title
+   
+worksheet.mergeCells('C1:F1');
+worksheet.getCell('C1').value = `${settings.siteName || 'Your Company'}\nFinancial Summary Report`;
+worksheet.getCell('C1').font = { name: 'Calibri', size: 18, bold: true, color: { argb: colors.secondary } };
+worksheet.getCell('C1').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+worksheet.getCell('C1').fill = { 
+    type: 'gradient', 
+    gradient: 'angle', 
+    degree: 90, 
+
+    stops: [
+        { position: 0, color: { argb: colors.background } },
+        { position: 1, color: { argb: colors.header } }
+    ]
+};
+worksheet.getRow(1).height = 80; // Match logo row height
+applyBorders(1, 1, ['C', 'D', 'E', 'F']); // Borders for title
+
+// Metadata
+worksheet.mergeCells('C2:F2');
+worksheet.getCell('C2').value = `Generated on: ${new Date().toLocaleDateString('en-US', { dateStyle: 'medium', timeZone: 'Asia/Karachi' })}`; // Use PKT timezone
+worksheet.getCell('C2').font = { name: 'Calibri', size: 11, italic: true, color: { argb: colors.text } };
+worksheet.getCell('C2').alignment = { horizontal: 'center', vertical: 'middle' };
+worksheet.getCell('C2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.background } };
+worksheet.getRow(2).height = 25;
+applyBorders(2, 2, ['C', 'D', 'E', 'F']); // Borders for metadata
+
+if (customerId && reportData.transactions[0]?.customerId?.name) {
+    worksheet.mergeCells('C3:F3');
+    worksheet.getCell('C3').value = `Customer: ${reportData.transactions[0].customerId.name}`;
+    worksheet.getCell('C3').font = { name: 'Calibri', size: 11, italic: true, color: { argb: colors.text } };
+    worksheet.getCell('C3').alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getCell('C3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.background } };
+    worksheet.getRow(3).height = 25;
+    applyBorders(3, 3, ['C', 'D', 'E', 'F']);
+} else if (isAdmin) {
+    worksheet.mergeCells('C3:F3');
+    worksheet.getCell('C3').value = 'All Users';
+    worksheet.getCell('C3').font = { name: 'Calibri', size: 11, italic: true, color: { argb: colors.text } };
+    worksheet.getCell('C3').alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getCell('C3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.background } };
+    worksheet.getRow(3).height = 25;
+    applyBorders(3, 3, ['C', 'D', 'E', 'F']);
+}
+
+
+    worksheet.getRow(4).height = 15; // Spacer row
+
+    // Summary Section
+    worksheet.mergeCells('A5:F5');
+    worksheet.getCell('A5').value = 'Summary';
+    worksheet.getCell('A5').font = { name: 'Calibri', size: 14, bold: true, color: { argb: colors.secondary } };
+    worksheet.getCell('A5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.header } };
+    worksheet.getCell('A5').alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(5).height = 30;
+
+    const summaryRows = [
+        ['Period', `${startDate ? new Date(startDate).toLocaleDateString('en-US', { dateStyle: 'medium' }) : 'N/A'} to ${endDate ? new Date(endDate).toLocaleDateString('en-US', { dateStyle: 'medium' }) : 'N/A'}`],
+        ['Opening Balance', cleanAmount(openingBalance).toLocaleString('en-US', { style: 'currency', currency: 'USD' })],
+        ['Total Credits', cleanAmount(totalReceipts).toLocaleString('en-US', { style: 'currency', currency: 'USD' })],
+        ['Total Debits', cleanAmount(totalPayments).toLocaleString('en-US', { style: 'currency', currency: 'USD' })],
+        ['Closing Balance', cleanAmount(reportData.balance).toLocaleString('en-US', { style: 'currency', currency: 'USD' })],
+    ];
+
+    let rowIndex = 6;
+    summaryRows.forEach(([label, value], index) => {
+        const row = worksheet.addRow([label, value, '', '', '', '']);
+        row.font = {
+            name: 'Calibri',
+            size: 11,
+            bold: index === 4, // Bold for Closing Balance
+            color: { argb: index === 2 ? colors.accent : index === 3 ? colors.warning : index === 4 ? (reportData.balance >= 0 ? colors.accent : colors.warning) : colors.text },
+        };
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? colors.background : 'FFFFFFFF' } };
+        row.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.height = 25;
+        applyBorders(rowIndex, rowIndex, ['A', 'B']);
+        rowIndex++;
+    });
+
+    worksheet.getRow(rowIndex).height = 15; // Spacer row
+    rowIndex++;
+
+    worksheet.mergeCells(`A${rowIndex}:B${rowIndex}`); // Merge only A and B for the title
+worksheet.getCell(`A${rowIndex}`).value = 'Category Summary';
+worksheet.getCell(`A${rowIndex}`).font = { name: 'Calibri', size: 14, bold: true, color: { argb: colors.secondary } };
+worksheet.getCell(`A${rowIndex}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.header } };
+worksheet.getCell(`A${rowIndex}`).alignment = { horizontal: 'center', vertical: 'middle' };
+worksheet.getRow(rowIndex).height = 30;
+applyBorders(rowIndex, rowIndex, ['A', 'B']); // Apply borders to A and B only
+rowIndex++;
+
+const catHeaderRow = worksheet.addRow(['Category', 'Amount']);
+catHeaderRow.eachCell((cell, colNumber) => {
+    if (colNumber <= 2) { // Only style columns A and B
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.primary } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+            top: { style: 'thin', color: { argb: colors.header } },
+            left: { style: 'thin', color: { argb: colors.header } },
+            bottom: { style: 'thin', color: { argb: colors.header } },
+            right: { style: 'thin', color: { argb: colors.header } },
+        };
+    }
+});
+worksheet.getRow(rowIndex).height = 25;
+rowIndex++;
+
+Object.entries(categorySummary).forEach(([category, amount], index) => {
+    const row = worksheet.addRow([category || 'Uncategorized', cleanAmount(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })]);
+    row.eachCell((cell, colNumber) => {
+        if (colNumber <= 2) { // Only style columns A and B
+            cell.font = { name: 'Calibri', size: 11, color: { argb: colors.text } };
+            if (colNumber === 2) {
+                cell.font = { name: 'Calibri', size: 11, color: { argb: cleanAmount(amount) >= 0 ? colors.accent : colors.warning } };
+                cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            } else {
+                cell.alignment = { horizontal: 'left', vertical: 'middle' };
             }
-
-            worksheet.mergeCells('C1:F1');
-            worksheet.getCell('C1').value = 'Financial Summary Report';
-            worksheet.getCell('C1').font = { size: 16, bold: true, color: { argb: 'FF1F2937' } };
-            worksheet.getCell('C1').alignment = { horizontal: 'center', vertical: 'middle' };
-            worksheet.mergeCells('C2:F2');
-            worksheet.getCell('C2').value = `Generated on: ${new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })}`;
-            worksheet.getCell('C2').font = { size: 10, color: { argb: 'FF6B7280' } };
-            worksheet.getCell('C2').alignment = { horizontal: 'center', vertical: 'middle' };
-            if (customerId && reportData.transactions[0]?.customerId?.name) {
-                worksheet.mergeCells('C3:F3');
-                worksheet.getCell('C3').value = `Customer: ${reportData.transactions[0].customerId.name}`;
-                worksheet.getCell('C3').font = { size: 10, color: { argb: 'FF6B7280' } };
-                worksheet.getCell('C3').alignment = { horizontal: 'center', vertical: 'middle' };
-            } else if (isAdmin) {
-                worksheet.mergeCells('C3:F3');
-                worksheet.getCell('C3').value = 'All Users';
-                worksheet.getCell('C3').font = { size: 10, color: { argb: 'FF6B7280' } };
-                worksheet.getCell('C3').alignment = { horizontal: 'center', vertical: 'middle' };
-            }
-            worksheet.addRow([]);
-            worksheet.getRow(4).height = 10;
-
-            worksheet.mergeCells('A5:F5');
-            worksheet.getCell('A5').value = 'Summary';
-            worksheet.getCell('A5').font = { size: 14, bold: true, color: { argb: 'FF1F2937' } };
-            worksheet.getCell('A5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
-            worksheet.getCell('A5').alignment = { horizontal: 'center' };
-            worksheet.addRow([
-                'Period',
-                `${startDate ? new Date(startDate).toLocaleDateString('en-US') : 'N/A'} to ${endDate ? new Date(endDate).toLocaleDateString('en-US') : 'N/A'}`,
-                '',
-                '',
-                '',
-                '',
-            ]).font = { size: 11 };
-            worksheet.addRow(['Opening Balance', ` ${cleanAmount(openingBalance).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FF374151' } };
-            worksheet.addRow(['Total Credits', ` ${cleanAmount(totalReceipts).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FF10B981' } };
-            worksheet.addRow(['Total Debits', ` ${cleanAmount(totalPayments).toFixed(2)}`, '', '', '', '']).font = { size: 11, color: { argb: 'FFEF4444' } };
-            worksheet.addRow(['Closing Balance', ` ${cleanAmount(reportData.balance).toFixed(2)}`, '', '', '', '']).font = {
-                size: 11,
-                bold: true,
-                color: { argb: reportData.balance >= 0 ? 'FF10B981' : 'FFEF4444' },
+            cell.border = {
+                top: { style: 'thin', color: { argb: colors.header } },
+                left: { style: 'thin', color: { argb: colors.header } },
+                bottom: { style: 'thin', color: { argb: colors.header } },
+                right: { style: 'thin', color: { argb: colors.header } },
             };
-            for (let i = 6; i <= 9; i++) {
-                worksheet.getRow(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
-                worksheet.getRow(i).height = 20;
-            }
-            worksheet.addRow([]);
+        }
+    });
+    row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? colors.background : 'FFFFFFFF' } };
+    row.height = 25;
+    rowIndex++;
+});
 
-            worksheet.mergeCells(`A${worksheet.rowCount}:F${worksheet.rowCount}`);
-            worksheet.getCell(`A${worksheet.rowCount}`).value = 'Category Summary';
-            worksheet.getCell(`A${worksheet.rowCount}`).font = { size: 14, bold: true, color: { argb: 'FF1F2937' } };
-            worksheet.getCell(`A${worksheet.rowCount}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
-            worksheet.getCell(`A${worksheet.rowCount}`).alignment = { horizontal: 'center' };
-            const catHeaderRow = worksheet.addRow(['Category', 'Amount', '', '', '', '']);
-            catHeaderRow.font = { size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-            catHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
-            catHeaderRow.alignment = { horizontal: 'center', vertical: 'middle' };
-            catHeaderRow.height = 25;
-            Object.entries(categorySummary).forEach(([category, amount], index) => {
-                const row = worksheet.addRow([category, ` ${cleanAmount(amount).toFixed(2)}`, '', '', '', '']);
-                row.font = { size: 11 };
-                row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFF9FAFB' : 'FFFFFFFF' } };
-                row.getCell(2).font = { color: { argb: cleanAmount(amount) >= 0 ? 'FF10B981' : 'FFEF4444' } };
-                row.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
-                row.height = 20;
-            });
-            worksheet.addRow([]);
+worksheet.getRow(rowIndex).height = 15; // Spacer row
+rowIndex++;
 
-            worksheet.mergeCells(`A${worksheet.rowCount}:F${worksheet.rowCount}`);
-            worksheet.getCell(`A${worksheet.rowCount}`).value = 'Transactions';
-            worksheet.getCell(`A${worksheet.rowCount}`).font = { size: 14, bold: true, color: { argb: 'FF1F2937' } };
-            worksheet.getCell(`A${worksheet.rowCount}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
-            worksheet.getCell(`A${worksheet.rowCount}`).alignment = { horizontal: 'center' };
-            worksheet.columns = [
-                { header: 'Type', key: 'type', width: 12 },
-                { header: 'Date', key: 'date', width: 15 },
-                { header: 'Customer', key: 'customer', width: 20 },
-                { header: 'Description', key: 'description', width: 35 },
-                { header: 'Category', key: 'category', width: 15 },
-                { header: 'Amount', key: 'amount', width: 12 },
-            ];
-            const txHeaderRow = worksheet.getRow(worksheet.rowCount);
-            txHeaderRow.font = { size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-            txHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
-            txHeaderRow.alignment = { horizontal: 'center', vertical: 'middle' };
-            txHeaderRow.height = 25;
-            reportData.transactions.forEach((t, index) => {
-                const row = worksheet.addRow({
-                    type: t.type,
-                    date: t.date ? t.date.toISOString().split('T')[0] : 'N/A',
-                    customer: t.customerId?.name || 'N/A',
-                    description: t.description || 'N/A',
-                    category: t.category || 'N/A',
-                    amount: ` ${cleanAmount(t.amount).toFixed(2)}`,
-                });
-                row.font = { size: 11 };
-                row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFF9FAFB' : 'FFFFFFFF' } };
-                row.getCell('amount').font = { color: { argb: t.type === 'receipt' ? 'FF10B981' : 'FFEF4444' } };
-                row.getCell('amount').alignment = { horizontal: 'right', vertical: 'middle' };
-                row.getCell('type').alignment = { horizontal: 'center', vertical: 'middle' };
-                row.getCell('date').alignment = { horizontal: 'center', vertical: 'middle' };
-                row.getCell('customer').alignment = { horizontal: 'center', vertical: 'middle' };
-                row.getCell('category').alignment = { horizontal: 'center', vertical: 'middle' };
-                row.height = 20;
-            });
+    // Transactions Section
+    // Transactions Section
+worksheet.mergeCells(`A${rowIndex}:F${rowIndex}`);
+worksheet.getCell(`A${rowIndex}`).value = 'Transactions';
+worksheet.getCell(`A${rowIndex}`).font = { name: 'Calibri', size: 14, bold: true, color: { argb: colors.secondary } };
+worksheet.getCell(`A${rowIndex}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.header } };
+worksheet.getCell(`A${rowIndex}`).alignment = { horizontal: 'center', vertical: 'middle' };
+worksheet.getRow(rowIndex).height = 30;
+rowIndex++;
 
-            worksheet.columns.forEach((column) => {
-                let maxLength = 0;
-                column.eachCell({ includeEmpty: true }, (cell) => {
-                    const length = cell.value ? cell.value.toString().length : 0;
-                    if (length > maxLength) maxLength = length;
-                });
-                column.width = Math.min(Math.max(column.width || 10, maxLength + 2), 50);
-            });
+// Define column headers explicitly
+const txHeaderRow = worksheet.addRow(['Type', 'Date', 'Customer', 'Description', 'Category', 'Amount']);
+txHeaderRow.eachCell((cell) => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.primary } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = {
+        top: { style: 'thin', color: { argb: colors.header } },
+        left: { style: 'thin', color: { argb: colors.header } },
+        bottom: { style: 'thin', color: { argb: colors.header } },
+        right: { style: 'thin', color: { argb: colors.header } },
+    };
+});
+worksheet.getRow(rowIndex).height = 25;
+applyBorders(rowIndex, rowIndex);
+rowIndex++;
 
-            const addBorders = (startRow, endRow) => {
-                for (let i = startRow; i <= endRow; i++) {
-                    ['A', 'B', 'C', 'D', 'E', 'F'].forEach((col) => {
-                        const cell = worksheet.getCell(`${col}${i}`);
-                        cell.border = {
-                            top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-                            left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-                            bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-                            right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-                        };
-                    });
-                }
-            };
-            addBorders(11, 11 + Object.keys(categorySummary).length);
-            addBorders(14 + Object.keys(categorySummary).length, 14 + Object.keys(categorySummary).length + reportData.transactions.length);
+// Set column widths
+worksheet.columns = [
+    { key: 'type', width: 12 },
+    { key: 'date', width: 15 },
+    { key: 'customer', width: 20 },
+    { key: 'description', width: 35 },
+    { key: 'category', width: 15 },
+    { key: 'amount', width: 12 },
+];
 
-            const filename = `report-${Date.now()}.xlsx`;
-            const filePath = path.join(tempDir, filename);
-            await workbook.xlsx.writeFile(filePath);
+// Add transactions
+reportData.transactions.forEach((t, index) => {
+    const row = worksheet.addRow({
+        type: t.type === 'receipt' ? 'Credit' : 'Debit',
+        date: t.date ? new Date(t.date).toLocaleDateString('en-US', { dateStyle: 'short' }) : 'N/A',
+        customer: t.customerId?.name || 'N/A',
+        description: truncateDescription(t.description) || 'N/A',
+        category: t.category || 'N/A',
+        amount: cleanAmount(t.amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' }),
+    });
+    row.font = { name: 'Calibri', size: 11, color: { argb: colors.text } };
+    row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? colors.background : 'FFFFFFFF' } };
+    row.getCell('amount').font = { name: 'Calibri', size: 11, color: { argb: t.type === 'receipt' ? colors.accent : colors.warning } };
+    row.getCell('amount').alignment = { horizontal: 'right', vertical: 'middle' };
+    row.getCell('type').alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell('date').alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell('customer').alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell('category').alignment = { horizontal: 'center', vertical: 'middle' };
+    row.height = 25;
+    applyBorders(rowIndex, rowIndex);
+    rowIndex++;
+});
 
-            // Verify file exists before reading
-            try {
-                await fs.access(filePath);
-            } catch (err) {
-                console.error('File does not exist:', filePath);
-                throw new Error('Failed to create Excel file');
-            }
+// Apply conditional formatting to the Amount column
+worksheet.addConditionalFormatting({
+    ref: `F${rowIndex - reportData.transactions.length}:${rowIndex - 1}`,
+    rules: [
+        {
+            type: 'cellIs',
+            operator: 'greaterThanOrEqual',
+            formulae: ['0'],
+            style: { font: { color: { argb: colors.accent } } },
+        },
+        {
+            type: 'cellIs',
+            operator: 'lessThan',
+            formulae: ['0'],
+            style: { font: { color: { argb: colors.warning } } },
+        },
+    ],
+});
 
-            // Read the Excel file and upload to Vercel Blob
-            const excelBuffer = await fs.readFile(filePath);
-            const blob = await put(`reports/${filename}`, excelBuffer, {
-                access: 'public',
-                addRandomSuffix: true,
-                token: process.env.BLOB_READ_WRITE_TOKEN,
-            });
+// Auto-adjust column widths based on content
+worksheet.columns.forEach((column) => {
+    let maxLength = 0;
+    column.eachCell({ includeEmpty: true }, (cell) => {
+        const length = cell.value ? cell.value.toString().length : 0;
+        if (length > maxLength) maxLength = length;
+    });
+    column.width = Math.min(Math.max(column.width || 10, maxLength + 4), 50);
+});
+    // Save and upload the file
+    const filename = `report-${Date.now()}.xlsx`;
+    const filePath = path.join(tempDir, filename);
+    await workbook.xlsx.writeFile(filePath);
 
-            // Clean up temporary file
-            await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
+    // Verify file exists before reading
+    try {
+        await fs.access(filePath);
+    } catch (err) {
+        console.error('File does not exist:', filePath);
+        throw new Error('Failed to create Excel file');
+    }
 
-            res.json({ url: blob.url });
-        } else {
+    // Read the Excel file and upload to Vercel Blob
+    const excelBuffer = await fs.readFile(filePath);
+    const blob = await put(`reports/${filename}`, excelBuffer, {
+        access: 'public',
+        addRandomSuffix: true,
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+
+    // Clean up temporary file
+    await fs.unlink(filePath).catch((err) => console.error('Error deleting temp file:', err));
+
+    res.json({ url: blob.url });
+} else {
             res.json(reportData);
         }
     } catch (error) {
