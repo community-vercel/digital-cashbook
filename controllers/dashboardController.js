@@ -1,67 +1,66 @@
-const Receipt = require('../models/Receipt');
-const Payment = require('../models/Payment');
+// controllers/dashboardController.js
+const Transaction = require('../models/Transaction');
 
 exports.getDashboardData = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const query = {  }; // Changed from user to userId for consistency
+    const query = {};
 
     // Apply date filters if provided
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      if (isNaN(start) || isNaN(end)) {
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
         return res.status(400).json({ error: 'Invalid date format' });
       }
       query.date = { $gte: start, $lte: end };
     }
 
-    // Fetch receipts and payments with customer data
-    const [receipts, payments] = await Promise.all([
-      Receipt.find(query).populate('customerId', 'name'),
-      Payment.find(query).populate('customerId', 'name'),
-    ]);
+    // Fetch transactions with customer data
+    const transactions = await Transaction.find(query).populate('customerId', 'name');
 
-    // Calculate totals
-    const totalReceipts = receipts.reduce((sum, r) => sum + (r.amount || 0), 0);
-    const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    // Separate transactions by type and calculate totals
+    const receivables = transactions.filter(t => t.transactionType === 'receivable');
+    const payables = transactions.filter(t => t.transactionType === 'payable');
+    const totalReceivables = receivables.reduce((sum, r) => sum + (r.receivable || 0), 0);
+    const totalPayables = payables.reduce((sum, p) => sum + (p.payable || 0), 0);
 
     // Calculate opening balance (sum of all transactions before startDate)
-    let openingBalanceQuery = {  };
+    let openingBalanceQuery = {};
     if (startDate) {
       openingBalanceQuery.date = { $lt: new Date(startDate) };
     }
-    const [previousReceipts, previousPayments] = await Promise.all([
-      Receipt.find(openingBalanceQuery),
-      Payment.find(openingBalanceQuery),
-    ]);
-    const openingBalance =
-      previousReceipts.reduce((sum, r) => sum + (r.amount || 0), 0) -
-      previousPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const previousTransactions = await Transaction.find(openingBalanceQuery);
+    const openingBalance = previousTransactions.reduce(
+      (sum, t) => sum + (t.transactionType === 'receivable' ? (t.receivable || 0) : -(t.payable || 0)),
+      0
+    );
 
     // Calculate closing balance
-    const closingBalance = totalReceipts - totalPayments + openingBalance;
+    const closingBalance = totalReceivables - totalPayables + openingBalance;
 
     // Check for discrepancies
     const alerts = [];
-    if (receipts.length === 0 && payments.length === 0 && startDate && endDate) {
+    if (transactions.length === 0 && startDate && endDate) {
       alerts.push('No transactions recorded for the selected period.');
     }
     if (closingBalance < 0) {
       alerts.push('Warning: Negative cash balance detected.');
     }
 
-    // Combine and sort recent transactions
-    const recentTransactions = [
-      ...receipts.map(t => ({ ...t.toObject(), type: 'receipt' })),
-      ...payments.map(t => ({ ...t.toObject(), type: 'payment' })),
-    ]
+    // Sort and limit recent transactions
+    const recentTransactions = transactions
+      .map(t => ({
+        ...t.toObject(),
+        type: t.transactionType, // For compatibility with frontend
+        amount: t.transactionType === 'receivable' ? t.receivable : t.payable, // For compatibility
+      }))
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .slice(0, 10);
 
     res.json({
-      totalReceipts,
-      totalPayments,
+      totalReceivables,
+      totalPayables,
       balance: closingBalance,
       openingBalance,
       alerts,
