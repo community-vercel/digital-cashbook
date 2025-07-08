@@ -12,8 +12,9 @@ const settingRoutes = require('./routes/setting');
 const transactionROutes = require('./routes/transactionRoutes');
 const productRoutes = require('./routes/products');
 const errorHandler = require('./middleware/errorHandler');
-const itemRoutes = require('./routes/items');
-
+const itemRoutes = require('./routes/products');
+const productsRoutes = require('./routes/product');
+const colorRoutes=require('./routes/colors');
 const fileUpload = require('express-fileupload');
 
 require('dotenv').config();
@@ -54,9 +55,10 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/settings', settingRoutes);
 app.use('/api/transactions',transactionROutes);
 app.use('/api/users', require('./routes/users'));
-app.use('/api/products', productRoutes);
+app.use('/api/items', productRoutes);
+app.use('/api/product', productsRoutes);
+app.use('/api/colors', colorRoutes);
 
-app.use('/api/items', itemRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const Item = require('../models/Item');
+const Product = require('../models/Product');
 const router = express.Router();
 
 // Middleware to verify JWT
@@ -17,22 +18,28 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-// Get all items
+// Get all items with search and pagination
 router.get('/', authMiddleware, async (req, res) => {
   const { search, page = 1, limit = 10 } = req.query;
   const query = { userId: req.user.userId };
 
-  // Add search functionality
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { category: { $regex: search, $options: 'i' } },
-      { shelf: { $regex: search, $options: 'i' } },
-    ];
+    const productQuery = {
+      $or: [
+        { name: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } },
+      ],
+    };
+    const products = await Product.find(productQuery).select('_id');
+    query.productId = { $in: products.map((p) => p._id) };
   }
 
   try {
     const items = await Item.find(query)
+      .populate({
+        path: 'productId',
+        populate: { path: 'colorId', select: 'colorName code' },
+      })
       .skip((page - 1) * limit)
       .limit(Number(limit));
     const total = await Item.countDocuments(query);
@@ -42,56 +49,47 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// Add item (with or without barcode)
+// Add new item
 router.post('/', authMiddleware, async (req, res) => {
-  const { name, quantity, price, barcode, category, shelf, minStock, maxStock } = req.body;
+  const { productId, quantity, barcode, shelf, minStock, maxStock } = req.body;
   try {
     const item = new Item({
-      name,
+      productId,
       quantity,
-      price,
-      barcode: barcode || null, // Allow null barcode
-      category,
-      shelf: shelf || null, // Allow null shelf
+      barcode: barcode || null,
+      shelf: shelf || null,
       minStock,
       maxStock,
       userId: req.user.userId,
     });
     await item.save();
-    res.json({ message: 'Item added successfully', item });
+    const populatedItem = await Item.findById(item._id).populate({
+      path: 'productId',
+      populate: { path: 'colorId', select: 'colorName code' },
+    });
+    res.json({ message: 'Item added successfully', item: populatedItem });
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' });
   }
 });
 
 // Update item
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { name, quantity, price, barcode, category, shelf, minStock, maxStock } = req.body;
+  const { productId, quantity, barcode, shelf, minStock, maxStock } = req.body;
   try {
     const item = await Item.findOneAndUpdate(
       { _id: id, userId: req.user.userId },
-      { name, quantity, price, barcode, category, shelf, minStock, maxStock },
+      { productId, quantity, barcode, shelf, minStock, maxStock },
       { new: true }
-    );
+    ).populate({
+      path: 'productId',
+      populate: { path: 'colorId', select: 'colorName code' },
+    });
     if (!item) return res.status(404).json({ message: 'Item not found' });
     res.json({ message: 'Item updated successfully', item });
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-//get itm
-router.get('/:id', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  try {
-    const item = await Item.findOne(
-      { _id: id }
-   
-    );
-    if (!item) return res.status(404).json({ message: 'Item not found' });
-    res.json(item); 
- } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' });
   }
 });
 
@@ -107,11 +105,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Scan barcode
+// Scan item by barcode
 router.get('/scan/:barcode', authMiddleware, async (req, res) => {
   const { barcode } = req.params;
   try {
-    const item = await Item.findOne({ barcode, userId: req.user.userId });
+    const item = await Item.findOne({ barcode, userId: req.user.userId }).populate({
+      path: 'productId',
+      populate: { path: 'colorId', select: 'colorName code' },
+    });
     if (!item) return res.status(404).json({ message: 'Item not found' });
     res.json(item);
   } catch (error) {
