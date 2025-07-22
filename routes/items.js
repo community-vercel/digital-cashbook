@@ -24,22 +24,18 @@ router.get('/', authMiddleware, async (req, res) => {
   const query = { userId: req.user.userId };
 
   if (search) {
-    const productQuery = {
-      $or: [
-        { name: { $regex: search, $options: 'i' } },
-        { category: { $regex: search, $options: 'i' } },
-      ],
-    };
-    const products = await Product.find(productQuery).select('_id');
-    query.productId = { $in: products.map((p) => p._id) };
+    query.$or = [
+      { 'productId.name': { $regex: search, $options: 'i' } },
+      { category: { $regex: search, $options: 'i' } },
+      { shelf: { $regex: search, $options: 'i' } },
+      { color: { $regex: search, $options: 'i' } },
+      { colorCode: { $regex: search, $options: 'i' } },
+    ];
   }
 
   try {
     const items = await Item.find(query)
-      .populate({
-        path: 'productId',
-        populate: { path: 'colorId', select: 'colorName code' },
-      })
+      .populate('productId')
       .skip((page - 1) * limit)
       .limit(Number(limit));
     const total = await Item.countDocuments(query);
@@ -50,9 +46,28 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // Add new item
+// Add new item
 router.post('/', authMiddleware, async (req, res) => {
-  const { productId, quantity, barcode, shelf, minStock, maxStock } = req.body;
+  const { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage } = req.body;
   try {
+    // Validate inputs
+    if (quantity < 0 || minStock < 0 || maxStock < 0) {
+      return res.status(400).json({ message: 'Quantity, min stock, and max stock cannot be negative' });
+    }
+    if (minStock > maxStock) {
+      return res.status(400).json({ message: 'Min stock cannot be greater than max stock' });
+    }
+    if (discountPercentage < 0 || discountPercentage > 100) {
+      return res.status(400).json({ message: 'Discount percentage must be between 0 and 100' });
+    }
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    if (product.category !== category) {
+      return res.status(400).json({ message: 'Selected category does not match product category' });
+    }
+
     const item = new Item({
       productId,
       quantity,
@@ -61,14 +76,21 @@ router.post('/', authMiddleware, async (req, res) => {
       minStock,
       maxStock,
       userId: req.user.userId,
+      color,
+      colorCode,
+      category,
+      discountPercentage,
     });
     await item.save();
-    const populatedItem = await Item.findById(item._id).populate({
-      path: 'productId',
-      populate: { path: 'colorId', select: 'colorName code' },
-    });
+    const populatedItem = await Item.findById(item._id).populate('productId');
     res.json({ message: 'Item added successfully', item: populatedItem });
   } catch (error) {
+    if (error.code === 11000 && error.keyPattern?.productId && error.keyPattern?.category) {
+      return res.status(400).json({ message: 'An item with this product and category already exists for this user' });
+    }
+    if (error.code === 11000 && error.keyPattern?.barcode) {
+      return res.status(400).json({ message: 'Barcode already exists' });
+    }
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
@@ -76,20 +98,49 @@ router.post('/', authMiddleware, async (req, res) => {
 // Update item
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { productId, quantity, barcode, shelf, minStock, maxStock } = req.body;
+  const { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage } = req.body;
   try {
+    // Validate inputs
+    if (quantity < 0 || minStock < 0 || maxStock < 0) {
+      return res.status(400).json({ message: 'Quantity, min stock, and max stock cannot be negative' });
+    }
+    if (minStock > maxStock) {
+      return res.status(400).json({ message: 'Min stock cannot be greater than max stock' });
+    }
+    if (discountPercentage < 0 || discountPercentage > 100) {
+      return res.status(400).json({ message: 'Discount percentage must be between 0 and 100' });
+    }
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    if (product.category !== category) {
+      return res.status(400).json({ message: 'Selected category does not match product category' });
+    }
     const item = await Item.findOneAndUpdate(
       { _id: id, userId: req.user.userId },
-      { productId, quantity, barcode, shelf, minStock, maxStock },
+      { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage },
       { new: true }
-    ).populate({
-      path: 'productId',
-      populate: { path: 'colorId', select: 'colorName code' },
-    });
+    ).populate('productId');
     if (!item) return res.status(404).json({ message: 'Item not found' });
     res.json({ message: 'Item updated successfully', item });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Barcode already exists' });
+    }
     res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
+// Get item by ID
+router.get('/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const item = await Item.findOne({ _id: id, userId: req.user.userId }).populate('productId');
+    if (!item) return res.status(404).json({ message: 'Item not found' });
+    res.json(item);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -109,10 +160,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 router.get('/scan/:barcode', authMiddleware, async (req, res) => {
   const { barcode } = req.params;
   try {
-    const item = await Item.findOne({ barcode, userId: req.user.userId }).populate({
-      path: 'productId',
-      populate: { path: 'colorId', select: 'colorName code' },
-    });
+    const item = await Item.findOne({ barcode, userId: req.user.userId }).populate('productId');
     if (!item) return res.status(404).json({ message: 'Item not found' });
     res.json(item);
   } catch (error) {
