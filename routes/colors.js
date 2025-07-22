@@ -27,6 +27,7 @@ router.get('/', authMiddleware, async (req, res) => {
     query.$or = [
       { colorName: { $regex: search, $options: 'i' } },
       { code: { $regex: search, $options: 'i' } },
+      { colorCode: { $regex: search, $options: 'i' } },
     ];
   }
 
@@ -43,9 +44,13 @@ router.get('/', authMiddleware, async (req, res) => {
 
 // Add new color
 router.post('/', authMiddleware, async (req, res) => {
-  const { colorName, code } = req.body;
+  const { colorName, code, colorCode } = req.body;
   try {
-    const color = new Color({ colorName, code });
+    // Validate colorCode format (e.g., alphanumeric, 3-10 characters)
+    if (!/^[A-Z0-9]{3,10}$/.test(colorCode)) {
+      return res.status(400).json({ message: 'Color code must be alphanumeric and 3-10 characters' });
+    }
+    const color = new Color({ colorName, code, colorCode });
     await color.save();
     res.json({ message: 'Color added successfully', color });
   } catch (error) {
@@ -56,9 +61,13 @@ router.post('/', authMiddleware, async (req, res) => {
 // Update color
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { colorName, code } = req.body;
+  const { colorName, code, colorCode } = req.body;
   try {
-    const color = await Color.findByIdAndUpdate(id, { colorName, code }, { new: true });
+    // Validate colorCode format
+    if (!/^[A-Z0-9]{3,10}$/.test(colorCode)) {
+      return res.status(400).json({ message: 'Color code must be alphanumeric and 3-10 characters' });
+    }
+    const color = await Color.findByIdAndUpdate(id, { colorName, code, colorCode }, { new: true });
     if (!color) return res.status(404).json({ message: 'Color not found' });
     res.json({ message: 'Color updated successfully', color });
   } catch (error) {

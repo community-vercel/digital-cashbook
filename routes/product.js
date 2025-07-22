@@ -32,7 +32,6 @@ router.get('/', authMiddleware, async (req, res) => {
 
   try {
     const products = await Product.find(query)
-      .populate('colorId', 'colorName code')
       .skip((page - 1) * limit)
       .limit(Number(limit));
     const total = await Product.countDocuments(query);
@@ -44,18 +43,28 @@ router.get('/', authMiddleware, async (req, res) => {
 
 // Add new product
 router.post('/', authMiddleware, async (req, res) => {
-  const { name, price, colorId, quantity, category } = req.body;
+  const { name, costPrice, retailPrice, discountPercentage, category } = req.body;
   try {
+    // Validate inputs
+    if (costPrice < 0 || retailPrice < 0) {
+      return res.status(400).json({ message: 'Prices cannot be negative' });
+    }
+    if (discountPercentage < 0 || discountPercentage > 100) {
+      return res.status(400).json({ message: 'Discount percentage must be between 0 and 100' });
+    }
     const product = new Product({
       name,
-      price,
-      colorId,
+      costPrice,
+      retailPrice,
+      discountPercentage,
       category,
     });
     await product.save();
-    const populatedProduct = await Product.findById(product._id).populate('colorId', 'colorName code');
-    res.json({ message: 'Product added successfully', product: populatedProduct });
+    res.json({ message: 'Product added successfully', product });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: `A product with the name "${name}" and category "${category}" already exists` });
+    }
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
@@ -63,16 +72,26 @@ router.post('/', authMiddleware, async (req, res) => {
 // Update product
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { name, price, colorId, category } = req.body;
+  const { name, costPrice, retailPrice, discountPercentage, category } = req.body;
   try {
+    // Validate inputs
+    if (costPrice < 0 || retailPrice < 0) {
+      return res.status(400).json({ message: 'Prices cannot be negative' });
+    }
+    if (discountPercentage < 0 || discountPercentage > 100) {
+      return res.status(400).json({ message: 'Discount percentage must be between 0 and 100' });
+    }
     const product = await Product.findByIdAndUpdate(
       id,
-      { name, price, colorId, category },
+      { name, costPrice, retailPrice, discountPercentage, category },
       { new: true }
-    ).populate('colorId', 'colorName code');
+    );
     if (!product) return res.status(404).json({ message: 'Product not found' });
     res.json({ message: 'Product updated successfully', product });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: `A product with the name "${name}" and category "${category}" already exists` });
+    }
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
