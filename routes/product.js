@@ -40,6 +40,27 @@ router.get('/', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+router.get('/itemssearch', authMiddleware, async (req, res) => {
+  const { search, page = 1, limit = 100000 } = req.query;
+  const query = {};
+
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { category: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  try {
+    const products = await Product.find(query)
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+    const total = await Product.countDocuments(query);
+    res.json({ products, total });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Add new product
 router.post('/', authMiddleware, async (req, res) => {
