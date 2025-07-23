@@ -143,7 +143,60 @@ router.get('/:id', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+router.get('/audit-logs', authMiddleware, async (req, res) => {
+  console.log('GET /items/audit-logs received:');
+    console.log('GET /items/audit-logs received:', req.query);
 
+  const { page = 1, limit = 10, entityId } = req.query;
+  try {
+    // Validate query parameters
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    if (isNaN(pageNum) || pageNum < 1 || isNaN(limitNum) || limitNum < 1) {
+      return res.status(400).json({ message: 'Invalid page or limit parameters' });
+    }
+
+    const query = { userId: req.user.userId, entity: 'Item' };
+    if (entityId) {
+      if (!mongoose.isValidObjectId(entityId)) {
+        return res.status(400).json({ message: 'Invalid entityId format' });
+      }
+      query.entityId = entityId;
+
+      // Verify entityId exists in Item collection
+      const itemExists = await Item.findById(entityId).lean();
+      if (!itemExists) {
+        return res.status(404).json({ message: 'Item not found for the provided entityId' });
+      }
+    }
+
+    const logs = await AuditLog.find(query)
+      .populate({
+        path: 'userId',
+        select: 'username',
+        options: { strictPopulate: false, lean: true },
+      })
+      .populate({
+        path: 'entityId',
+        select: 'productId quantity category', // Only fetch relevant fields
+        options: { strictPopulate: false, lean: true },
+      })
+      .sort({ createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean(); // Convert to plain JS object for performance
+
+    const total = await AuditLog.countDocuments(query);
+    res.json({ logs, total });
+  } catch (error) {
+    console.error('Error in GET /items/audit-logs:', {
+      message: error.message,
+      stack: error.stack,
+      query: { page, limit, entityId, userId: req.user?.userId },
+    });
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 // Delete item
 router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
@@ -167,5 +220,6 @@ router.get('/scan/:barcode', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 module.exports = router;
