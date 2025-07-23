@@ -508,7 +508,6 @@ if (format === 'pdf') {
         console.log(`PDF file written directly: ${filePath}`);
 
         // Save a local copy for debugging
-        await fs.writeFile('test-output.pdf', fixedPdfBuffer);
         console.log('Local PDF saved as test-output.pdf for debugging');
 
         try {
