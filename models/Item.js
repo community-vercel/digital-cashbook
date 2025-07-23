@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const itemSchema = new mongoose.Schema({
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
   quantity: { type: Number, required: true, default: 0 },
-  barcode: { type: String, unique: true, sparse: true },
+  barcode: { type: String, unique: false, sparse: true },
   shelf: { type: String, required: false },
   minStock: { type: Number, default: 5 },
   maxStock: { type: Number, default: 50 },
@@ -19,7 +19,6 @@ const itemSchema = new mongoose.Schema({
 });
 
 // Ensure the barcode index is sparse
-itemSchema.index({ barcode: 1 }, { unique: true, sparse: true });
 itemSchema.index({ productId: 1, category: 1, userId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Item', itemSchema);
