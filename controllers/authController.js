@@ -27,3 +27,19 @@ exports.login = async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 };
+
+exports.validateToken = (req, res, next) => {
+   const token = req.headers.authorization?.split(' ')[1]; // Extract token from Bearer header
+
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+
+  try {
+    // Verify token (replace 'your_jwt_secret' with your actual secret)
+    jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+    res.status(200).json({ message: 'Token is valid' });
+  } catch (error) {
+    res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
