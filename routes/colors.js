@@ -50,6 +50,18 @@ router.post('/', authMiddleware, async (req, res) => {
     if (!/^[A-Z0-9]{3,10}$/.test(colorCode)) {
       return res.status(400).json({ message: 'Color code must be alphanumeric and 3-10 characters' });
     }
+
+    // Check for existing color with same colorName or colorCode
+    const existingColor = await Color.findOne({
+      $or: [{ colorName }, { colorCode }],
+    });
+
+    if (existingColor) {
+      return res.status(400).json({
+        message: 'A color with the same name or color code already exists',
+      });
+    }
+
     const color = new Color({ colorName, code, colorCode });
     await color.save();
     res.json({ message: 'Color added successfully', color });
@@ -59,6 +71,7 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // Update color
+// Update color
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { colorName, code, colorCode } = req.body;
@@ -67,14 +80,30 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (!/^[A-Z0-9]{3,10}$/.test(colorCode)) {
       return res.status(400).json({ message: 'Color code must be alphanumeric and 3-10 characters' });
     }
-    const color = await Color.findByIdAndUpdate(id, { colorName, code, colorCode }, { new: true });
+
+    // Check for existing color with same colorName or colorCode, excluding the current color
+    const existingColor = await Color.findOne({
+      $or: [{ colorName }, { colorCode }],
+      _id: { $ne: id }, // Exclude the current color being updated
+    });
+
+    if (existingColor) {
+      return res.status(400).json({
+        message: 'A color with the same name or color code already exists',
+      });
+    }
+
+    const color = await Color.findByIdAndUpdate(
+      id,
+      { colorName, code, colorCode },
+      { new: true }
+    );
     if (!color) return res.status(404).json({ message: 'Color not found' });
     res.json({ message: 'Color updated successfully', color });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
-
 // Delete color
 router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
