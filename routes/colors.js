@@ -51,26 +51,20 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Color code must be alphanumeric and 3-10 characters' });
     }
 
-    // Check for existing color with same colorName or colorCode
-    const existingColor = await Color.findOne({
-      $or: [{ colorName }, { colorCode }],
-    });
-
-    if (existingColor) {
-      return res.status(400).json({
-        message: 'A color with the same name or color code already exists',
-      });
-    }
-
+    // The compound index in the schema will handle duplicate checks
     const color = new Color({ colorName, code, colorCode });
     await color.save();
     res.json({ message: 'Color added successfully', color });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: `A color with the same name (${colorName}) and code (${colorCode}) already exists`,
+      });
+    }
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
 
-// Update color
 // Update color
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
@@ -81,18 +75,6 @@ router.put('/:id', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Color code must be alphanumeric and 3-10 characters' });
     }
 
-    // Check for existing color with same colorName or colorCode, excluding the current color
-    const existingColor = await Color.findOne({
-      $or: [{ colorName }, { colorCode }],
-      _id: { $ne: id }, // Exclude the current color being updated
-    });
-
-    if (existingColor) {
-      return res.status(400).json({
-        message: 'A color with the same name or color code already exists',
-      });
-    }
-
     const color = await Color.findByIdAndUpdate(
       id,
       { colorName, code, colorCode },
@@ -101,9 +83,15 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (!color) return res.status(404).json({ message: 'Color not found' });
     res.json({ message: 'Color updated successfully', color });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: `A color with the same name (${colorName}) and code (${colorCode}) already exists`,
+      });
+    }
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
+
 // Delete color
 router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
