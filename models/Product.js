@@ -8,7 +8,7 @@ const productSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['gallon', 'quarter', 'drums', 'liters'],
+    enum: ['gallon', 'quarter', 'drums', 'liters','Dibbi'],
   },
 });
 
