@@ -129,7 +129,46 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+router.get('/totals', async (req, res) => {
+  try {
+    const { search } = req.query;
+    const query = search
+      ? {
+          $or: [
+            { 'productId.name': { $regex: search, $options: 'i' } },
+            { category: { $regex: search, $options: 'i' } },
+            { shelf: { $regex: search, $options: 'i' } },
+            { color: { $regex: search, $options: 'i' } },
+            { barcode: { $regex: search, $options: 'i' } },
+          ],
+        }
+      : {};
 
+    // Aggregate totals
+    const items = await Item.find(query).populate('productId');
+    const totals = items.reduce(
+      (acc, item) => {
+        const quantity = item.quantity || 0;
+        const costPrice = item.productId?.costPrice || 0;
+        const retailPrice = item.productId?.retailPrice || 0;
+        const discountPercentage = item.discountPercentage || 0;
+        const salePrice = retailPrice - (retailPrice * discountPercentage) / 100;
+
+        acc.totalQuantity += quantity;
+        acc.totalCostPrice += quantity * costPrice;
+        acc.totalRetailPrice += quantity * retailPrice;
+        acc.totalSalePrice += quantity * salePrice;
+
+        return acc;
+      },
+      { totalQuantity: 0, totalCostPrice: 0, totalRetailPrice: 0, totalSalePrice: 0 }
+    );
+
+    res.json(totals);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch totals' });
+  }
+});
 router.post('/', authMiddleware, async (req, res) => {
   const { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage } = req.body;
   try {

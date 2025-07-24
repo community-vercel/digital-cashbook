@@ -40,6 +40,30 @@ router.get('/', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+router.get('/totals', async (req, res) => {
+  try {
+    const { search } = req.query;
+    const query = search
+      ? { $or: [{ name: { $regex: search, $options: 'i' } }, { category: { $regex: search, $options: 'i' } }] }
+      : {};
+
+    const products = await Product.find(query);
+    const totals = products.reduce(
+      (acc, product) => {
+        acc.totalCostPrice += product.costPrice || 0;
+        acc.totalRetailPrice += product.retailPrice || 0;
+        acc.totalSalePrice +=
+          (product.retailPrice * (1 - (product.discountPercentage || 0) / 100)) || 0;
+        return acc;
+      },
+      { totalCostPrice: 0, totalRetailPrice: 0, totalSalePrice: 0 }
+    );
+
+    res.json(totals);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch totals' });
+  }
+});
 router.get('/itemssearch', authMiddleware, async (req, res) => {
   const { search, page = 1, limit = 100000 } = req.query;
   const query = {};
