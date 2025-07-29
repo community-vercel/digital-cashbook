@@ -3,6 +3,7 @@ const Transaction = require('../models/Transaction');
 const Customer = require('../models/Customer');
 const { put, del } = require('@vercel/blob');
 const mongoose = require('mongoose');
+const { generateDailyReport } = require('../utils/generateDailyReport'); // Destructure the function
 
 exports.addTransaction = async (req, res) => {
   const { customerId, customerName, phone, totalAmount, payable, receivable, description, category, type, isRecurring, date, dueDate, user, transactionType } = req.body;
@@ -73,7 +74,75 @@ exports.addTransaction = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+// controllers/transactionController.js
+// controllers/transactionController.js
+exports.getDailyReport = async (req, res) => {
+  try {
+    const { date } = req.query;
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
 
+    const transactions = await Transaction.find({
+      date: { $gte: startOfDay, $lte: endOfDay },
+    }).populate('customerId', 'name');
+
+    const previousTransactions = await Transaction.find({
+      date: { $lt: startOfDay },
+    });
+
+    const openingReceivables = previousTransactions
+      .filter((t) => t.transactionType === 'receivable')
+      .reduce((sum, t) => sum + t.receivable, 0);
+    const openingPayables = previousTransactions
+      .filter((t) => t.transactionType === 'payable')
+      .reduce((sum, t) => sum + t.payable, 0);
+    const openingBalance = openingReceivables - openingPayables;
+
+    const totalPayables = transactions
+      .filter((t) => t.transactionType === 'payable')
+      .reduce((sum, t) => sum + t.payable, 0);
+    const totalReceivables = transactions
+      .filter((t) => t.transactionType === 'receivable')
+      .reduce((sum, t) => sum + t.receivable, 0);
+    const dailyBalance = totalReceivables - totalPayables;
+
+    const closingBalance = openingBalance + dailyBalance;
+
+    res.json({
+      date,
+      transactions,
+      summary: {
+        openingBalance,
+        totalPayables,
+        totalReceivables,
+        dailyBalance,
+        closingBalance,
+      },
+    });
+  } catch (error) {
+    console.error('Error in getDailyReport:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.generateDailyReportPdf = async (req, res) => {
+  try {
+    const { date } = req.query;
+    const reportDate = new Date(date);
+
+    if (isNaN(reportDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
+
+    const blobUrl = await generateDailyReport(reportDate);
+    res.json({ url: blobUrl });
+  } catch (error) {
+    console.error('Error in generateDailyReportPdf:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 exports.getTransactions = async (req, res) => {
   try {
     const { startDate, endDate, category, customerId, transactionType, page = 1, limit = 10 } = req.query;

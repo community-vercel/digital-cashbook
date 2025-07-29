@@ -16,10 +16,20 @@ const itemRoutes = require('./routes/products');
 const productsRoutes = require('./routes/product');
 const colorRoutes=require('./routes/colors');
 const fileUpload = require('express-fileupload');
+const { scheduleDailyReports } = require('./utils/scheduleDailyReport');
+const backupRoutes = require('./routes/backup');
 
 require('dotenv').config();
 
 const app = express();
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })
+);
 // Middleware setup
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -30,6 +40,8 @@ app.use(fileUpload({
 
 // Connect to MongoDB
 connectDB();
+
+scheduleDailyReports();
 
 
 app.use((req, res, next) => {
@@ -58,6 +70,8 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/items', productRoutes);
 app.use('/api/product', productsRoutes);
 app.use('/api/colors', colorRoutes);
+app.use('/api/backup', backupRoutes);
+
 
 
 const PORT = process.env.PORT || 5000;
