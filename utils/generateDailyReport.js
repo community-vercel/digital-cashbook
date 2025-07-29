@@ -6,6 +6,7 @@ const Customer = require('../models/Customer');
 const Setting = require('../models/Setting');
 const axios = require('axios');
 
+
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
