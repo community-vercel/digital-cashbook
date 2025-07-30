@@ -572,6 +572,10 @@ if (format === 'pdf') {
             });
         });
 
+
+
+        
+
         // Verify and clean up pages with pdf-lib
         const pdfLibDoc = await PDFLibDocument.load(pdfBuffer);
         const actualPageCount = pdfLibDoc.getPageCount();
