@@ -4,6 +4,7 @@ const Customer = require('../models/Customer');
 const { put, del } = require('@vercel/blob');
 const mongoose = require('mongoose');
 const { generateDailyReport } = require('../utils/generateDailyReport'); // Destructure the function
+const Setting = require('../models/Setting'); // Added to fetch settings
 
 exports.addTransaction = async (req, res) => {
   const { customerId, customerName, phone, totalAmount, payable, receivable, description, category, type, isRecurring, date, dueDate, user, transactionType } = req.body;
