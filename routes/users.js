@@ -46,9 +46,24 @@ router.put('/:id', verifyAdmin, async (req, res) => {
 
 // Delete user
 router.delete('/:id', verifyAdmin, async (req, res) => {
+  console.log('Deleting user:', req.user);
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    // Prevent self-deletion
+    if (req.user.userId === req.params.id) {
+      return res.status(403).json({ error: 'Cannot delete your own account' });
+    }
+
+    // Find the user to delete
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(403).json({ error: 'Cannot delete an admin user' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });

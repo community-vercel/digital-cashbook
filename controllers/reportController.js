@@ -10,93 +10,197 @@ const User = require('../models/User');
 const Setting = require('../models/Setting');
 const axios = require('axios');
 
+// Helper function to safely parse dates as UTC
+const parseUTCDate = (dateString, isEndOfDay = false) => {
+  if (!dateString || typeof dateString !== 'string') {
+    return null;
+  }
+  
+  // Remove any existing time or timezone info and ensure YYYY-MM-DD format
+  const cleanDateString = dateString.split('T')[0].trim();
+  
+  // Validate date format (YYYY-MM-DD)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateString)) {
+    throw new Error(`Invalid date format: ${dateString}. Expected YYYY-MM-DD`);
+  }
+  
+  const timeString = isEndOfDay ? '23:59:59.999Z' : '00:00:00.000Z';
+  const utcDateString = `${cleanDateString}T${timeString}`;
+  const date = new Date(utcDateString);
+  
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid date: ${dateString}`);
+  }
+  
+  return date;
+};
+
+// Helper function to safely get numeric value
+const getNumericValue = (value, defaultValue = 0) => {
+  const num = Number(value);
+  return (typeof num === 'number' && !isNaN(num)) ? num : defaultValue;
+};
+
 exports.getSummaryReport = async (req, res) => {
     try {
         const { startDate, endDate, format, customerId, role } = req.query;
         const settings = await Setting.findOne();
-        console.log('Settings:', settings);
 
         // Check if user is admin
         const user = await User.findById(req.user.id);
         const isAdmin = role === 'admin';
 
-        // Build query
+        // Build query with enhanced date validation
         const query = {};
-        // if (!isAdmin) {
-        //     query.userId = req.user.id;
-        // }
-        if (startDate && endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            if (isNaN(start) || isNaN(end)) {
-                return res.status(400).json({ error: 'Invalid date format' });
+        
+        // Parse and validate dates with UTC handling
+        let startDateParsed = null;
+        let endDateParsed = null;
+        
+        if (startDate || endDate) {
+            try {
+                if (startDate) {
+                    startDateParsed = parseUTCDate(startDate, false);
+                }
+                
+                if (endDate) {
+                    endDateParsed = parseUTCDate(endDate, true);
+                }
+                
+                // Validate date range
+                if (startDateParsed && endDateParsed && startDateParsed > endDateParsed) {
+                    return res.status(400).json({ 
+                        error: 'Start date cannot be after end date' 
+                    });
+                }
+                
+                // Build date query
+                if (startDateParsed && endDateParsed) {
+                    query.date = { $gte: startDateParsed, $lte: endDateParsed };
+                } else if (startDateParsed) {
+                    query.date = { $gte: startDateParsed };
+                } else if (endDateParsed) {
+                    query.date = { $lte: endDateParsed };
+                }
+                
+                
+            } catch (dateError) {
+                return res.status(400).json({ 
+                    error: dateError.message 
+                });
             }
-            query.date = { $gte: start, $lte: end };
+        } else {
         }
+
+        // Add customer filter if provided
         if (customerId) {
             query.customerId = customerId;
         }
 
-        const truncateDescription = (description) => {
-            if (!description) return 'N/A';
-            const words = description.trim().split(/\s+/);
-            if (words.length > 10) {
-                return words.slice(0, 10).join(' ') + ' ....';
-            }
-            return description;
-        };
+      const truncateDescription = (description) => {
+  if (!description) return 'N/A';
+  const maxLength = 10; // set your character limit here
+
+  if (description.length > maxLength) {
+    return description.slice(0, maxLength) + '...';
+  }
+
+  return description;
+};
+
 
         // Fetch transactions
         const transactions = await Transaction.find(query).populate('customerId', 'name').sort({ date: -1 });
 
-        // Validate and clean amounts
-        const cleanAmount = (amount) => (typeof amount === 'number' && !isNaN(amount) ? amount : 0);
+        // Validate and clean amounts with enhanced function
+        const cleanAmount = (amount) => getNumericValue(amount);
 
-        // Calculate totals
+        // Calculate totals with better logging
         const totalReceivables = transactions
             .filter((t) => t.transactionType === 'receivable')
-            .reduce((sum, t) => sum + cleanAmount(t.totalAmount), 0);
+            .reduce((sum, t) => {
+                const amount = cleanAmount(t.receivable);
+                return sum + amount;
+            }, 0);
+            
         const totalPayables = transactions
             .filter((t) => t.transactionType === 'payable')
-            .reduce((sum, t) => sum + cleanAmount(t.totalAmount), 0);
+            .reduce((sum, t) => {
+                const amount = cleanAmount(t.payable);
+                return sum + amount;
+            }, 0);
 
-        // Calculate opening balance
-       let openingBalance = 0;
-    let openingBalanceQuery = { ...query };
-    delete openingBalanceQuery.date;
-    if (startDate) {
-      openingBalanceQuery.date = { $lt: new Date(startDate) };
-    }
-    const previousTransactions = await Transaction.find(openingBalanceQuery);
-    if (previousTransactions.length > 0) {
-      openingBalance = previousTransactions.reduce(
-        (sum, t) =>
-          t.transactionType === 'receivable'
-            ? sum + cleanAmount(t.receivable)
-            : sum - cleanAmount(t.payable),
-        0
-      );
-    } else {
-      // Use stored opening balance if no prior transactions
-      openingBalance = settings.openingBalance !== null ? settings.openingBalance : 0;
-    }
 
-        // Category summary
+        // Calculate opening balance with improved UTC handling
+        let openingBalance = 0;
+        
+        if (startDateParsed) {
+            // Get transactions before the start date for opening balance
+            const openingBalanceQuery = { date: { $lt: startDateParsed } };
+            
+            // Add customer filter to opening balance query if specified
+            if (customerId) {
+                openingBalanceQuery.customerId = customerId;
+            }
+            
+            
+            const previousTransactions = await Transaction.find(openingBalanceQuery);
+            
+            if (previousTransactions.length > 0) {
+                openingBalance = previousTransactions.reduce((sum, t) => {
+                    const receivable = cleanAmount(t.receivable);
+                    const payable = cleanAmount(t.payable);
+                    const amount = t.transactionType === 'receivable' ? receivable : -payable;
+                    return sum + amount;
+                }, 0);
+            } else {
+                // Use stored opening balance if no prior transactions
+                openingBalance = settings && settings.openingBalance !== null 
+                    ? cleanAmount(settings.openingBalance) 
+                    : 0;
+            }
+        } else {
+            // No start date provided, use settings opening balance
+            openingBalance = settings && settings.openingBalance !== null 
+                ? cleanAmount(settings.openingBalance) 
+                : 0;
+        }
+
+
+        // Category summary with enhanced validation
         const categorySummary = {};
         transactions.forEach((t) => {
-            const amount = t.transactionType === 'receivable' ? cleanAmount(t.totalAmount) : -cleanAmount(t.totalAmount);
-            categorySummary[t.category] = (categorySummary[t.category] || 0) + amount;
+            const amount = t.transactionType === 'receivable' 
+                ? cleanAmount(t.totalAmount) 
+                : -cleanAmount(t.totalAmount);
+            const categoryKey = t.category || 'Uncategorized';
+            categorySummary[categoryKey] = (categorySummary[categoryKey] || 0) + amount;
         });
 
-        const reportData = {
-            totalReceivables,
-            totalPayables,
-            balance: totalReceivables - totalPayables + openingBalance,
-            openingBalance,
-            categorySummary,
-            transactions: transactions.map((t) => ({ ...t.toObject(), type: t.transactionType })),
-        };
+        // Calculate final balance
+        const finalBalance = totalReceivables - totalPayables + openingBalance;
+    
 
+        const reportData = {
+            totalReceivables: Math.round(totalReceivables * 100) / 100,
+            totalPayables: Math.round(totalPayables * 100) / 100,
+            balance: Math.round(finalBalance * 100) / 100,
+            openingBalance: Math.round(openingBalance * 100) / 100,
+            categorySummary,
+            transactions: transactions.map((t) => ({ 
+                ...t.toObject(), 
+                type: t.transactionType,
+                formattedDate: t.date ? t.date.toISOString().split('T')[0] : 'N/A'
+            })),
+            metadata: {
+                dateRange: {
+                    startDate: startDateParsed ? startDateParsed.toISOString().split('T')[0] : null,
+                    endDate: endDateParsed ? endDateParsed.toISOString().split('T')[0] : null
+                },
+                transactionCount: transactions.length,
+                customerId: customerId || null
+            }
+        };
         // Ensure temp directory exists
         const tempDir = os.tmpdir();
         await fs.mkdir(tempDir, { recursive: true }).catch((err) =>{
@@ -113,7 +217,6 @@ if (format === 'pdf') {
     const buffers = [];
     doc.on('data', buffers.push.bind(buffers));
     doc.on('end', () => {
-        console.log(`PDF buffer captured, size: ${Buffer.concat(buffers).length} bytes`);
     });
 
     try {
@@ -146,7 +249,6 @@ if (format === 'pdf') {
             doc.addPage();
             currentY = topMargin;
             addHeader();
-            console.log(`New page added, currentY: ${currentY}, page: ${doc.bufferedPageRange().count}`);
         };
 
         // Header function
@@ -198,7 +300,6 @@ if (format === 'pdf') {
                 .stroke();
 
             currentY = topMargin + headerHeight;
-            console.log(`Header added, currentY: ${currentY}, page: ${doc.bufferedPageRange().count}`);
         };
 
         // Footer function
@@ -212,11 +313,9 @@ if (format === 'pdf') {
                 .lineTo(pageWidth - rightMargin, pageHeight - bottomMargin - 40)
                 .strokeColor('#e5e7eb')
                 .stroke();
-            console.log(`Footer added, page: ${pageNumber}, currentY: ${currentY}`);
         };
 
         // Initialize first page
-        console.log(`Starting PDF generation, initial page count: ${doc.bufferedPageRange().count}`);
         addHeader();
 
         // Report period
@@ -238,7 +337,6 @@ if (format === 'pdf') {
             );
 
         currentY += 30;
-        console.log(`After report period, currentY: ${currentY}, page: ${doc.bufferedPageRange().count}`);
 
         // Summary box
         if (currentY + 105 > pageHeight - bottomMargin - footerHeight) {
@@ -258,7 +356,6 @@ if (format === 'pdf') {
             .text(`Closing Balance: ${cleanAmount(reportData.balance).toFixed(2)}`, leftMargin + 10, currentY + 75);
 
         currentY += 125;
-        console.log(`After summary box, currentY: ${currentY}, page: ${doc.bufferedPageRange().count}`);
 
         // Category Summary
         if (currentY + 30 > pageHeight - bottomMargin - footerHeight) {
@@ -342,7 +439,6 @@ if (format === 'pdf') {
         });
 
         currentY += 20;
-        console.log(`After category summary, currentY: ${currentY}, page: ${doc.bufferedPageRange().count}`);
 
         // Transactions section
         if (reportData.transactions.length === 0) {
@@ -354,13 +450,11 @@ if (format === 'pdf') {
                 .fillColor('#374151')
                 .text('No transactions found for the selected period.', leftMargin, currentY);
             currentY += 20;
-            console.log(`No transactions, currentY: ${currentY}, page: ${doc.bufferedPageRange().count}`);
         } else {
             const txColWidths = [80, 80, 120, 90, 80, 75];
             const txRowHeight = 25;
             const tableLeft = leftMargin;
 
-            console.log(`Total transactions to render: ${reportData.transactions.length}`);
 
             if (currentY + 20 + txRowHeight > pageHeight - bottomMargin - footerHeight) {
                 addNewPage();
@@ -411,7 +505,6 @@ if (format === 'pdf') {
             currentY += txRowHeight;
 
             reportData.transactions.forEach((t, index) => {
-                console.log(`Processing transaction ${index + 1} of ${reportData.transactions.length}, currentY: ${currentY}, page: ${doc.bufferedPageRange().count}`);
 
                 if (currentY + txRowHeight > pageHeight - bottomMargin - footerHeight) {
                     addNewPage();
@@ -463,17 +556,14 @@ if (format === 'pdf') {
         } else {
             addFooter(doc.bufferedPageRange().count);
         }
-        console.log(`After footer, currentY: ${currentY}, page count: ${doc.bufferedPageRange().count}`);
 
         // Finalize document
         doc.end();
-        console.log(`Document ended, page count: ${doc.bufferedPageRange().count}`);
 
         // Get PDF buffer
         const pdfBuffer = await new Promise((resolve, reject) => {
             doc.on('end', () => {
                 const buffer = Buffer.concat(buffers);
-                console.log(`PDF stream finished, final page count: ${doc.bufferedPageRange().count}, buffer size: ${buffer.length} bytes`);
                 resolve(buffer);
             });
             doc.on('error', (err) => {
@@ -485,31 +575,24 @@ if (format === 'pdf') {
         // Verify and clean up pages with pdf-lib
         const pdfLibDoc = await PDFLibDocument.load(pdfBuffer);
         const actualPageCount = pdfLibDoc.getPageCount();
-        console.log(`pdf-lib page count: ${actualPageCount}`);
 
         // Remove empty last page if necessary
         if (actualPageCount > 1 && currentY <= topMargin + headerHeight + 50) {
             pdfLibDoc.removePage(actualPageCount - 1);
-            console.log('Removed empty last page');
         }
 
         // Save PDF buffer
         const fixedPdfBuffer = await pdfLibDoc.save();
-        console.log(`Fixed PDF buffer size: ${fixedPdfBuffer.length} bytes`);
 
         // Write PDF to file
         await fs.writeFile(filePath, fixedPdfBuffer);
-        console.log(`PDF file written: ${filePath}`);
 
         // Save a local copy for debugging
         await fs.writeFile('test-output.pdf', fixedPdfBuffer);
-        console.log('Local PDF saved as test-output.pdf for debugging');
 
         try {
             await fs.access(filePath);
-            console.log(`PDF file created successfully: ${filePath}`);
         } catch (err) {
-            console.error('File does not exist:', filePath);
             throw new Error('Failed to create PDF file');
         }
 
