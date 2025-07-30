@@ -24,7 +24,12 @@ router.post('/create', auth, async (req, res) => {
 router.get('/list', auth, async (req, res) => {
   try {
     const backups = await backupService.listBackups();
-    res.json({ success: true, backups });
+
+    const sortedBackups = Array.isArray(backups)
+      ? backups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      : [];
+
+    res.json({ success: true, backups: sortedBackups });
   } catch (error) {
     console.error('List backups error:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to list backups' });
@@ -32,6 +37,7 @@ router.get('/list', auth, async (req, res) => {
     await backupService.disconnect();
   }
 });
+
 
 // Restore a backup
 router.post('/restore', auth, async (req, res) => {

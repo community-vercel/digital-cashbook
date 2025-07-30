@@ -92,14 +92,19 @@ exports.getDailyReport = async (req, res) => {
       date: { $lt: startOfDay },
     });
 
-    const openingReceivables = previousTransactions
-      .filter((t) => t.transactionType === 'receivable')
-      .reduce((sum, t) => sum + t.receivable, 0);
-    const openingPayables = previousTransactions
-      .filter((t) => t.transactionType === 'payable')
-      .reduce((sum, t) => sum + t.payable, 0);
-    const openingBalance = openingReceivables - openingPayables;
-
+      let openingBalance = 0;
+    if (previousTransactions.length > 0) {
+      const openingReceivables = previousTransactions
+        .filter((t) => t.transactionType === 'receivable')
+        .reduce((sum, t) => sum + (typeof t.receivable === 'number' && !isNaN(t.receivable) ? t.receivable : 0), 0);
+      const openingPayables = previousTransactions
+        .filter((t) => t.transactionType === 'payable')
+        .reduce((sum, t) => sum + (typeof t.payable === 'number' && !isNaN(t.payable) ? t.payable : 0), 0);
+      openingBalance = openingReceivables - openingPayables;
+    } else {
+      // Use stored opening balance if no prior transactions
+      openingBalance = settings.openingBalance !== null ? settings.openingBalance : 0;
+    }
     const totalPayables = transactions
       .filter((t) => t.transactionType === 'payable')
       .reduce((sum, t) => sum + t.payable, 0);

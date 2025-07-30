@@ -1,5 +1,6 @@
 // controllers/dashboardController.js
 const Transaction = require('../models/Transaction');
+const Setting = require('../models/Setting');
 
 exports.getDashboardData = async (req, res) => {
   try {
@@ -26,15 +27,27 @@ exports.getDashboardData = async (req, res) => {
     const totalPayables = payables.reduce((sum, p) => sum + (p.payable || 0), 0);
 
     // Calculate opening balance (sum of all transactions before startDate)
+        let openingBalance = 0;
+
     let openingBalanceQuery = {};
     if (startDate) {
       openingBalanceQuery.date = { $lt: new Date(startDate) };
     }
     const previousTransactions = await Transaction.find(openingBalanceQuery);
-    const openingBalance = previousTransactions.reduce(
-      (sum, t) => sum + (t.transactionType === 'receivable' ? (t.receivable || 0) : -(t.payable || 0)),
-      0
-    );
+      if (previousTransactions.length > 0) {
+      // Use transactions if available
+      openingBalance = previousTransactions.reduce(
+        (sum, t) => sum + (t.transactionType === 'receivable' ? (t.receivable || 0) : -(t.payable || 0)),
+        0
+      );
+    } else {
+      // Use stored opening balance if no prior transactions
+      const settings = await Setting.findOne();
+      if (settings && settings.openingBalance !== null) {
+        openingBalance = settings.openingBalance;
+      }
+    }
+  
 
     // Calculate closing balance
     const closingBalance = totalReceivables - totalPayables + openingBalance;

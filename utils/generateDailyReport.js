@@ -196,8 +196,14 @@ async function generateDailyReport(date) {
 
     // Calculate opening balance efficiently
     const previousTotals = calculateTotals(previousTransactions);
-    const openingBalance = previousTotals.receivables - previousTotals.payables;
-
+ let openingBalance = 0;
+    if (previousTransactions.length > 0) {
+      const previousTotals = calculateTotals(previousTransactions);
+      openingBalance = previousTotals.receivables - previousTotals.payables;
+    } else {
+      // Use stored opening balance if no prior transactions
+      openingBalance = settings.openingBalance !== null ? settings.openingBalance : 0;
+    }
     // Separate transactions
     const sellTransactions = transactions.filter((t) => t.transactionType === 'receivable');
     const expenseTransactions = transactions.filter((t) => t.transactionType === 'payable');

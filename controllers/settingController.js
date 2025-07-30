@@ -4,7 +4,7 @@ const { put } = require('@vercel/blob');
 // @desc Create or update settings
 exports.saveSettings = async (req, res) => {
   try {
-    const { siteName, phone } = req.body;
+    const { siteName, phone, logo, openingBalance } = req.body;
     let logoUrl = req.body.logo; // For non-file updates (e.g., keeping existing logo)
 
     // Handle file upload if a logo file is provided
@@ -27,13 +27,18 @@ exports.saveSettings = async (req, res) => {
       // Update existing settings
       setting.siteName = siteName || setting.siteName;
       setting.phone = phone || setting.phone;
+       if (openingBalance !== undefined && !setting.openingBalanceSet) {
+      setting.openingBalance = parseFloat(openingBalance) || 0;
+      setting.openingBalanceSet = true;
+    }
+
       if (logoUrl) setting.logo = logoUrl; // Update logo if provided
       setting.updatedAt = Date.now();
       await setting.save();
       res.json(setting);
     } else {
       // Create new settings
-      setting = new Setting({ siteName, phone, logo: logoUrl });
+      setting = new Setting({ siteName, phone, logo: logoUrl,openingBalance,openingBalanceSet:true });
       await setting.save();
       res.status(201).json(setting);
     }
