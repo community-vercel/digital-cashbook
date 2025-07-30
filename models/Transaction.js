@@ -18,8 +18,29 @@ const transactionSchema = new mongoose.Schema({
     required: true,
   },
   date: { type: Date, default: Date.now },
-  dueDate: { type: Date },
+  dueDate: { 
+    type: Date, 
+    default: undefined // Explicitly set to undefined instead of null
+  },
   createdAt: { type: Date, default: Date.now },
+});
+
+// Pre-save middleware to handle dueDate
+transactionSchema.pre('save', function(next) {
+  // Only set dueDate to undefined if it's explicitly null
+  if (this.dueDate === null) {
+    this.dueDate = undefined;
+  }
+  next();
+});
+
+// Pre-validate middleware
+transactionSchema.pre('validate', function(next) {
+  // Ensure dueDate is not set to null during validation
+  if (this.dueDate === null) {
+    this.dueDate = undefined;
+  }
+  next();
 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

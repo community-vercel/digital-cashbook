@@ -28,6 +28,9 @@ class BackupService {
     
     // Common ObjectId field names to look for
     this.objectIdFields = ['_id', 'customerId', 'productId', 'userId', 'categoryId', 'orderId', 'transactionId'];
+    
+    // Date fields that should be preserved
+    this.dateFields = ['date', 'dueDate', 'createdAt', 'updatedAt', 'timestamp'];
   }
 
   async connect() {
@@ -43,7 +46,12 @@ class BackupService {
     return typeof str === 'string' && /^[0-9a-fA-F]{24}$/.test(str);
   }
 
-  // Enhanced ObjectId conversion for backup
+  // Helper function to check if a value is a valid date
+  isValidDate(value) {
+    return value instanceof Date && !isNaN(value.getTime());
+  }
+
+  // Enhanced ObjectId conversion for backup with date preservation
   convertObjectIdsForBackup(obj) {
     if (obj === null || obj === undefined) return obj;
     
@@ -56,10 +64,19 @@ class BackupService {
         return { __objectId: obj.toString() };
       }
       
+      if (obj instanceof Date) {
+        return { __date: obj.toISOString() };
+      }
+      
       const converted = {};
       for (const [key, value] of Object.entries(obj)) {
         if (value instanceof ObjectId) {
           converted[key] = { __objectId: value.toString() };
+        } else if (value instanceof Date) {
+          converted[key] = { __date: value.toISOString() };
+        } else if (value === null || value === undefined) {
+          // Preserve null/undefined values explicitly
+          converted[key] = value;
         } else if (typeof value === 'object') {
           converted[key] = this.convertObjectIdsForBackup(value);
         } else {
@@ -72,7 +89,7 @@ class BackupService {
     return obj;
   }
 
-  // Enhanced ObjectId restoration
+  // Enhanced ObjectId restoration with date handling
   convertObjectIdsForRestore(obj) {
     if (obj === null || obj === undefined) return obj;
     
@@ -91,6 +108,16 @@ class BackupService {
         }
       }
       
+      // Check if this is our special Date marker
+      if (obj.__date && typeof obj.__date === 'string') {
+        try {
+          return new Date(obj.__date);
+        } catch (error) {
+          console.warn('Invalid Date format:', obj.__date);
+          return obj.__date;
+        }
+      }
+      
       const converted = {};
       for (const [key, value] of Object.entries(obj)) {
         if (value && typeof value === 'object' && value.__objectId) {
@@ -101,6 +128,14 @@ class BackupService {
             console.warn(`Invalid ObjectId for field ${key}:`, value.__objectId);
             converted[key] = value.__objectId;
           }
+        } else if (value && typeof value === 'object' && value.__date) {
+          // Handle nested Date markers
+          try {
+            converted[key] = new Date(value.__date);
+          } catch (error) {
+            console.warn(`Invalid Date for field ${key}:`, value.__date);
+            converted[key] = value.__date;
+          }
         } else if (this.objectIdFields.includes(key) && typeof value === 'string' && this.isValidObjectId(value)) {
           // Handle common ObjectId fields that might have been stored as strings
           try {
@@ -109,6 +144,22 @@ class BackupService {
             console.warn(`Could not convert ${key} to ObjectId:`, value);
             converted[key] = value;
           }
+        } else if (this.dateFields.includes(key) && typeof value === 'string') {
+          // Handle date fields that might have been stored as ISO strings
+          try {
+            const dateValue = new Date(value);
+            if (this.isValidDate(dateValue)) {
+              converted[key] = dateValue;
+            } else {
+              converted[key] = value;
+            }
+          } catch (error) {
+            console.warn(`Could not convert ${key} to Date:`, value);
+            converted[key] = value;
+          }
+        } else if (value === null || value === undefined) {
+          // Explicitly preserve null/undefined values
+          converted[key] = value;
         } else if (typeof value === 'object') {
           converted[key] = this.convertObjectIdsForRestore(value);
         } else {
@@ -139,8 +190,19 @@ class BackupService {
         const data = await db.collection(collectionName).find({}).toArray();
         console.log(`Backing up collection ${collectionName}: ${data.length} documents`);
         
-        // Convert ObjectIds to a special format for JSON serialization
-        backup.collections[collectionName] = this.convertObjectIdsForBackup(data);
+        // Log sample data before conversion for debugging
+        if (data.length > 0 && collectionName === 'transactions') {
+          console.log(`Sample transaction before backup conversion:`, JSON.stringify(data[0], null, 2));
+        }
+        
+        // Convert ObjectIds and Dates to a special format for JSON serialization
+        const convertedData = this.convertObjectIdsForBackup(data);
+        backup.collections[collectionName] = convertedData;
+        
+        // Log sample data after conversion for debugging
+        if (convertedData.length > 0 && collectionName === 'transactions') {
+          console.log(`Sample transaction after backup conversion:`, JSON.stringify(convertedData[0], null, 2));
+        }
       }
 
       console.log('Backup created successfully');
@@ -170,12 +232,23 @@ class BackupService {
         if (data && data.length > 0) {
           console.log(`Restoring collection ${collectionName}: ${data.length} documents`);
           
-          // Convert ObjectIds back from backup format
+          // Log sample data before restore conversion for debugging
+          if (collectionName === 'transactions') {
+            console.log(`Sample transaction before restore conversion:`, JSON.stringify(data[0], null, 2));
+          }
+          
+          // Convert ObjectIds and Dates back from backup format
           const restoredData = this.convertObjectIdsForRestore(data);
           
           // Log sample of restored data for debugging
           if (restoredData.length > 0) {
             console.log(`Sample restored document from ${collectionName}:`, JSON.stringify(restoredData[0], null, 2));
+            
+            // Special logging for transactions to check dueDate
+            if (collectionName === 'transactions') {
+              console.log(`Transaction dueDate value:`, restoredData[0].dueDate);
+              console.log(`Transaction dueDate type:`, typeof restoredData[0].dueDate);
+            }
           }
           
           await db.collection(collectionName).insertMany(restoredData);

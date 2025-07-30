@@ -107,24 +107,46 @@ router.get('/', authMiddleware, async (req, res) => {
   const { search, page = 1, limit = 10 } = req.query;
   const query = { userId: req.user.userId };
 
-  if (search) {
-    query.$or = [
-      { 'productId.name': { $regex: search, $options: 'i' } },
-      { category: { $regex: search, $options: 'i' } },
-      { shelf: { $regex: search, $options: 'i' } },
-      { color: { $regex: search, $options: 'i' } },
-      { colorCode: { $regex: search, $options: 'i' } },
-    ];
-  }
-
   try {
+    // Step 1: Find product IDs matching the search term (if provided)
+    let productIds = [];
+    if (search) {
+      const products = await Product.find({
+        name: { $regex: search, $options: 'i' },
+      }).select('_id');
+      productIds = products.map((p) => p._id);
+    }
+
+    // Step 2: Build the Item query
+    if (search) {
+      query.$or = [
+        ...(productIds.length ? [{ productId: { $in: productIds } }] : []),
+        { category: { $regex: search, $options: 'i' } },
+        { shelf: { $regex: search, $options: 'i' } },
+        { color: { $regex: search, $options: 'i' } },
+        { colorCode: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // Step 3: Fetch paginated items
     const items = await Item.find(query)
       .populate('productId')
-      .skip((page - 1) * limit)
-      .limit(Number(limit));
+      .skip((Number(page) - 1) * Number(limit))
+      .limit(Number(limit))
+      .lean(); // Use lean() for better performance
+
+    // Step 4: Count total documents
     const total = await Item.countDocuments(query);
+
+    // Log for debugging
+    console.log('Search term:', search);
+    console.log('Product IDs found:', productIds);
+    console.log('Query:', query);
+    console.log('Items found:', items.length);
+
     res.json({ items, total });
   } catch (error) {
+    console.error('Error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
