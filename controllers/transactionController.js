@@ -85,6 +85,10 @@ exports.getDailyReport = async (req, res) => {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
+     const settings = await Setting.findOne();
+    if (!settings) {
+      return res.status(404).json({ message: 'Settings not found' });
+    }
     const transactions = await Transaction.find({
       date: { $gte: startOfDay, $lte: endOfDay },
     }).populate('customerId', 'name');

@@ -26,11 +26,10 @@ const TABLE_CONFIG = {
   MIN_ROW_HEIGHT: 20,
   COLUMNS: {
     CUSTOMER: { x: 50, width: 100 },
-    TYPE: { x: 160, width: 60 },
-    TOTAL_AMOUNT: { x: 230, width: 80 },
-    AMOUNT: { x: 320, width: 80 },
-    REMAINING: { x: 410, width: 80 },
-    DESCRIPTION: { x: 480, width: 100 }
+    TOTAL_AMOUNT: { x: 140, width: 80 },
+    AMOUNT: { x: 250, width: 80 },
+    REMAINING: { x: 360, width: 80 },
+    DESCRIPTION: { x: 470, width: 100 }
   }
 };
 
@@ -87,7 +86,6 @@ function drawTableHeader(doc, y, color) {
   
   doc.fillColor(COLORS.WHITE)
     .text('Customer', COLUMNS.CUSTOMER.x, y + 8, { width: COLUMNS.CUSTOMER.width })
-    .text('Type', COLUMNS.TYPE.x, y + 8, { width: COLUMNS.TYPE.width })
     .text('Total Amount', COLUMNS.TOTAL_AMOUNT.x, y + 8, { width: COLUMNS.TOTAL_AMOUNT.width })
     .text('Paid/Received', COLUMNS.AMOUNT.x, y + 8, { width: COLUMNS.AMOUNT.width })
     .text('Remaining', COLUMNS.REMAINING.x, y + 8, { width: COLUMNS.REMAINING.width })
@@ -107,12 +105,11 @@ function drawTableRow(doc, transaction, index, currentY, type, rowColor1) {
   const paidAmount = type === 'Sell' ? transaction.receivable : transaction.payable;
   const amount = formatCurrency(paidAmount);
   const remainingAmount = formatCurrency((transaction.totalAmount || 0) - (paidAmount || 0));
-  const description = (transaction.description || 'N/A').substring(0, 30);
+  const description = (transaction.description || 'N/A').substring(0, 20);
 
   // Calculate dynamic row height efficiently
   const textHeights = [
     doc.heightOfString(customerName, { width: COLUMNS.CUSTOMER.width, fontSize: 10 }),
-    doc.heightOfString(transactionType, { width: COLUMNS.TYPE.width, fontSize: 10 }),
     doc.heightOfString(totalAmount, { width: COLUMNS.TOTAL_AMOUNT.width, fontSize: 10 }),
     doc.heightOfString(amount, { width: COLUMNS.AMOUNT.width, fontSize: 10 }),
     doc.heightOfString(remainingAmount, { width: COLUMNS.REMAINING.width, fontSize: 10 }),
@@ -126,7 +123,6 @@ function drawTableRow(doc, transaction, index, currentY, type, rowColor1) {
   doc.rect(X, currentY, WIDTH, rowHeight).fill(rowColor).stroke();
   doc.fillColor(COLORS.TEXT).fontSize(10)
     .text(customerName, COLUMNS.CUSTOMER.x, currentY + 5, { width: COLUMNS.CUSTOMER.width, lineBreak: true })
-    .text(transactionType, COLUMNS.TYPE.x, currentY + 5, { width: COLUMNS.TYPE.width, lineBreak: true })
     .text(totalAmount, COLUMNS.TOTAL_AMOUNT.x, currentY + 5, { width: COLUMNS.TOTAL_AMOUNT.width, lineBreak: true })
     .text(amount, COLUMNS.AMOUNT.x, currentY + 5, { width: COLUMNS.AMOUNT.width, lineBreak: true })
     .text(remainingAmount, COLUMNS.REMAINING.x, currentY + 5, { width: COLUMNS.REMAINING.width, lineBreak: true })
@@ -301,17 +297,7 @@ async function generateDailyReport(date) {
     });
 
     // Log summary for debugging
-    console.log('Daily Report Generated:', {
-      date: date.toISOString().split('T')[0],
-      openingBalance,
-      totalSells,
-      totalExpenses,
-      dailyBalance,
-      closingBalance,
-      sellCount,
-      expenseCount,
-      url
-    });
+    
 
     return url;
 
