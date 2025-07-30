@@ -588,7 +588,7 @@ if (format === 'pdf') {
         await fs.writeFile(filePath, fixedPdfBuffer);
 
         // Save a local copy for debugging
-        await fs.writeFile('test-output.pdf', fixedPdfBuffer);
+        // await fs.writeFile('test-output.pdf', fixedPdfBuffer);
 
         try {
             await fs.access(filePath);
