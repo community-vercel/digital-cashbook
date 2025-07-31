@@ -39,7 +39,6 @@ app.use(fileUpload({
 }));
 
 
-
 // Connect to MongoDB
 connectDB();
 
@@ -49,6 +48,7 @@ getCronStatus();
   // createManualBackup(), 
   // cleanupOldBackups() 
 // scheduleDailyBackup();
+
 
 
 app.use((req, res, next) => {
@@ -78,7 +78,6 @@ app.use('/api/items', productRoutes);
 app.use('/api/product', productsRoutes);
 app.use('/api/colors', colorRoutes);
 app.use('/api/backup', backupRoutes);
-
 
 
 
