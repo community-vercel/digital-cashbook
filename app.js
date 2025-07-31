@@ -16,10 +16,9 @@ const itemRoutes = require('./routes/products');
 const productsRoutes = require('./routes/product');
 const colorRoutes=require('./routes/colors');
 const fileUpload = require('express-fileupload');
-const { scheduleDailyReports } = require('./utils/scheduleDailyReport');
+const { scheduleDailyReports,getCronStatus } = require('./utils/scheduleDailyReport');
 const backupRoutes = require('./routes/backup');
 const { scheduleDailyBackup } = require('./utils/scheduleBackup');
-
 require('dotenv').config();
 
 const app = express();
@@ -43,6 +42,7 @@ app.use(fileUpload({
 connectDB();
 
 scheduleDailyReports();
+getCronStatus();
 scheduleDailyBackup();
 
 
