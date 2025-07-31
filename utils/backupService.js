@@ -1,6 +1,6 @@
 // backend/utils/backupService.js
 const { MongoClient, ObjectId } = require('mongodb');
-const { put, list, download } = require('@vercel/blob');
+const { put, list, download, del } = require('@vercel/blob');
 
 // Try to import fetch - handle different Node.js versions
 let fetch;
@@ -15,7 +15,7 @@ try {
 
 const https = require('https');
 
-console.log('Vercel Blob exports:', { put, list, download });
+console.log('Vercel Blob exports:', { put, list, download, del });
 console.log('Fetch available:', !!fetch);
 
 class BackupService {
@@ -31,6 +31,9 @@ class BackupService {
     
     // Date fields that should be preserved
     this.dateFields = ['date', 'dueDate', 'createdAt', 'updatedAt', 'timestamp'];
+    
+    // Backup retention period in days
+    this.BACKUP_RETENTION_DAYS = 7;
   }
 
   async connect() {
@@ -380,6 +383,94 @@ class BackupService {
       }));
     } catch (error) {
       console.error('Error listing backups:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete backups older than the retention period
+   */
+  async deleteOldBackups() {
+    try {
+      console.log(`Starting cleanup of backups older than ${this.BACKUP_RETENTION_DAYS} days`);
+      
+      const { blobs } = await list({ prefix: 'backups/' });
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - this.BACKUP_RETENTION_DAYS);
+      
+      const backupsToDelete = blobs.filter(blob => {
+        const backupDate = new Date(blob.uploadedAt);
+        return backupDate < cutoffDate;
+      });
+
+      if (backupsToDelete.length === 0) {
+        console.log('No old backups found to delete');
+        return { deleted: 0, message: 'No old backups to delete' };
+      }
+
+      console.log(`Found ${backupsToDelete.length} backups to delete`);
+      
+      const deletionResults = [];
+      for (const blob of backupsToDelete) {
+        try {
+          console.log(`Deleting backup: ${blob.pathname} (created: ${blob.uploadedAt})`);
+          await del(blob.url, {
+            token: process.env.BLOB_READ_WRITE_TOKEN,
+          });
+          deletionResults.push({
+            filename: blob.pathname.split('/').pop(),
+            success: true,
+            createdAt: blob.uploadedAt
+          });
+        } catch (deleteError) {
+          console.error(`Failed to delete backup ${blob.pathname}:`, deleteError);
+          deletionResults.push({
+            filename: blob.pathname.split('/').pop(),
+            success: false,
+            error: deleteError.message,
+            createdAt: blob.uploadedAt
+          });
+        }
+      }
+
+      const successfulDeletions = deletionResults.filter(result => result.success);
+      const failedDeletions = deletionResults.filter(result => !result.success);
+
+      console.log(`Backup cleanup completed: ${successfulDeletions.length} deleted, ${failedDeletions.length} failed`);
+      
+      return {
+        deleted: successfulDeletions.length,
+        failed: failedDeletions.length,
+        results: deletionResults,
+        message: `Deleted ${successfulDeletions.length} old backups`
+      };
+    } catch (error) {
+      console.error('Error during backup cleanup:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a specific backup by filename
+   */
+  async deleteBackup(filename) {
+    try {
+      console.log(`Deleting specific backup: ${filename}`);
+      
+      const { blobs } = await list({ prefix: `backups/${filename}`, limit: 1 });
+      if (!blobs || blobs.length === 0) {
+        throw new Error(`Backup file ${filename} not found`);
+      }
+
+      const blob = blobs[0];
+      await del(blob.url, {
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+      });
+
+      console.log(`Successfully deleted backup: ${filename}`);
+      return { success: true, message: `Backup ${filename} deleted successfully` };
+    } catch (error) {
+      console.error(`Error deleting backup ${filename}:`, error);
       throw error;
     }
   }

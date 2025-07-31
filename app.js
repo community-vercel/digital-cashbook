@@ -18,7 +18,7 @@ const colorRoutes=require('./routes/colors');
 const fileUpload = require('express-fileupload');
 const { scheduleDailyReports,getCronStatus } = require('./utils/scheduleDailyReport');
 const backupRoutes = require('./routes/backup');
-const { scheduleDailyBackup } = require('./utils/scheduleBackup');
+const { scheduleDailyBackup,cleanupOldBackups,createManualBackup } = require('./utils/scheduleBackup');
 require('dotenv').config();
 
 const app = express();
@@ -43,7 +43,10 @@ connectDB();
 
 scheduleDailyReports();
 getCronStatus();
-scheduleDailyBackup();
+ scheduleDailyBackup(), 
+  // createManualBackup(), 
+  // cleanupOldBackups() 
+// scheduleDailyBackup();
 
 
 app.use((req, res, next) => {
