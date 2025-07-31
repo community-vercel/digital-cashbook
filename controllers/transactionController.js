@@ -9,7 +9,6 @@ const Setting = require('../models/Setting'); // Added to fetch settings
 exports.addTransaction = async (req, res) => {
   const { customerId, customerName, phone, totalAmount, payable, receivable, description, category, type, isRecurring, date, dueDate, user, transactionType } = req.body;
   let transactionImage = null;
-
   try {
     // Validate transactionType
     if (!['payable', 'receivable'].includes(transactionType)) {
@@ -22,8 +21,8 @@ exports.addTransaction = async (req, res) => {
     }
 
     // Handle file upload to Vercel Blob
-    if (req.files && req.files.transactionImage) {
-      const file = req.files.transactionImage;
+    if (req.files && req.files.image) {
+      const file = req.files.image;
       const fileName = `${Date.now()}-${file.name}`;
       const { url } = await put(`transactions/${fileName}`, file.data, {
         access: 'public',
@@ -48,6 +47,26 @@ exports.addTransaction = async (req, res) => {
       return res.status(400).json({ message: 'Customer ID or name required' });
     }
 
+    // Get the current timestamp for createdAt and date
+    const currentTimestamp = new Date();
+
+    // Combine the provided date with the current time
+    let transactionDate = currentTimestamp;
+    if (date) {
+      const providedDate = new Date(date);
+      if (!isNaN(providedDate)) {
+        transactionDate = new Date(
+          providedDate.getFullYear(),
+          providedDate.getMonth(),
+          providedDate.getDate(),
+          currentTimestamp.getHours(),
+          currentTimestamp.getMinutes(),
+          currentTimestamp.getSeconds(),
+          currentTimestamp.getMilliseconds()
+        );
+      }
+    }
+
     const transaction = new Transaction({
       userId: user || req.user.id,
       customerId: customer._id,
@@ -60,8 +79,9 @@ exports.addTransaction = async (req, res) => {
       isRecurring,
       transactionImage,
       transactionType,
-      date: date || Date.now(),
-      dueDate: dueDate || null,
+      date: transactionDate,
+      dueDate: dueDate ? new Date(dueDate) : undefined,
+      createdAt: currentTimestamp,
     });
     await transaction.save();
 
