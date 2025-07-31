@@ -6,11 +6,11 @@ const AuditLog = require('../models/AuditLog');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-// Middleware to verify JWT
 const authMiddleware = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
 
+  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
