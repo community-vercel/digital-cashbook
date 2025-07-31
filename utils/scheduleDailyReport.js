@@ -4,7 +4,7 @@ const { generateDailyReport } = require('./generateDailyReport');
 const { sendDailyReportEmail } = require('./sendEmail');
 
 function scheduleDailyReports() {
-  cron.schedule('0 0 * * *', async () => {
+  cron.schedule('0 22 * * *', async () => {
     try {
       const today = new Date();
       const blobUrl = await generateDailyReport(today);
