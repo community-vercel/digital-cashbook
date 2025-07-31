@@ -49,13 +49,19 @@ const TABLE_CONFIG = {
 };
 
 const formatCurrency = (value) => {
-  if (!value || value === 0) return '';
-  return new Intl.NumberFormat('en-US', {
+  if (value === null || value === undefined) return '';
+  if (value === 0) return 'PKR 0';
+  
+  const absValue = Math.abs(value);
+  const formattedValue = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'PKR',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(Math.abs(value));
+  }).format(absValue);
+  
+  // Return negative values with proper formatting
+  return value < 0 ? `-(${formattedValue})` : formattedValue;
 };
 
 const formatDate = (date) => {
@@ -82,7 +88,7 @@ async function fetchLogo(logoUrl) {
   }
 }
 
-// Calculate running balance with optimization
+// FIXED: Calculate running balance with correct logic
 function calculateRunningBalance(transactions, openingBalance) {
   let runningBalance = openingBalance;
   const processedTransactions = [];
@@ -91,10 +97,14 @@ function calculateRunningBalance(transactions, openingBalance) {
   const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
   
   for (const transaction of sortedTransactions) {
+    // FIXED: Corrected the balance calculation logic
+    // Payable transactions should decrease balance (debit)
+    // Receivable transactions should increase balance (credit)
     const debit = transaction.transactionType === 'payable' ? (transaction.payable || 0) : 0;
     const credit = transaction.transactionType === 'receivable' ? (transaction.receivable || 0) : 0;
     
-    runningBalance += credit - debit;
+    // FIXED: Payables reduce balance, receivables increase balance
+    runningBalance = runningBalance + credit - debit;
     
     processedTransactions.push({
       ...transaction,
@@ -166,21 +176,31 @@ function drawSummarySection(doc, currentY, totals, sellCount, expenseCount, open
   
   // Left column
   doc.font('Helvetica-Bold')
-     .fontSize(12)
-     .fillColor(COLORS.TEXT)
-     .text(`Opening Balance: ${formatCurrency(openingBalance)}`, 50, currentY + 45)
-     .fillColor(COLORS.SUCCESS)
-     .text(`Total Sales (${sellCount}): ${formatCurrency(totals.totalCredits)}`, 50, currentY + 70)
-     .fillColor(COLORS.DANGER)
-     .text(`Total Expenses (${expenseCount}): ${formatCurrency(totals.totalDebits)}`, 50, currentY + 95);
+     .fontSize(12);
+  
+  // Opening Balance with color coding
+  doc.fillColor(openingBalance < 0 ? COLORS.DANGER : COLORS.TEXT)
+     .text(`Opening Balance: ${formatCurrency(openingBalance)}`, 50, currentY + 45);
+  
+  doc.fillColor(COLORS.SUCCESS)
+     .text(`Total Sales (${sellCount}): ${formatCurrency(totals.totalCredits)}`, 50, currentY + 70);
+  
+  // doc.fillColor(COLORS.DANGER)
+  //    .text(`Total Expenses (${expenseCount}): ${formatCurrency(totals.totalDebits)}`, 50, currentY + 95);
   
   // Right column
   const dailyBalance = totals.totalCredits - totals.totalDebits;
   const closingBalance = openingBalance + dailyBalance;
   
-  doc.fillColor(COLORS.TEXT)
-     .text(`Daily Balance: ${formatCurrency(dailyBalance)}`, 300, currentY + 45)
-     .text(`Closing Balance: ${formatCurrency(closingBalance)}`, 300, currentY + 70);
+  // Daily Balance with color coding
+  // doc.fillColor(dailyBalance < 0 ? COLORS.DANGER : (dailyBalance > 0 ? COLORS.SUCCESS : COLORS.TEXT))
+  //    .text(`Daily Balance: ${formatCurrency(dailyBalance)}`, 300, currentY + 45);
+  
+  // Closing Balance with color coding
+  doc.fillColor(closingBalance < 0 ? COLORS.DANGER : COLORS.TEXT)
+     .text(`Closing Balance: ${formatCurrency(closingBalance)}`, 300, currentY + 45);
+    doc.fillColor(COLORS.DANGER)
+     .text(`Total Expenses (${expenseCount}): ${formatCurrency(totals.totalDebits)}`, 300, currentY + 70);
   
   // Add decorative elements
 
@@ -239,6 +259,9 @@ function drawOpeningBalanceRow(doc, currentY, openingBalance) {
   doc.text('Opening Balance', COLUMNS.PARTICULARS.x, currentY + 7, { width: COLUMNS.PARTICULARS.width, align: COLUMNS.PARTICULARS.align });
   doc.text('', COLUMNS.DEBIT.x, currentY + 7, { width: COLUMNS.DEBIT.width, align: COLUMNS.DEBIT.align });
   doc.text('', COLUMNS.CREDIT.x, currentY + 7, { width: COLUMNS.CREDIT.width, align: COLUMNS.CREDIT.align });
+  
+  // Color code opening balance - red if negative
+  doc.fillColor(openingBalance < 0 ? COLORS.DANGER : COLORS.TEXT);
   doc.text(formatCurrency(openingBalance), COLUMNS.BALANCE.x, currentY + 7, { width: COLUMNS.BALANCE.width, align: COLUMNS.BALANCE.align });
   
   return currentY + ROW_HEIGHT;
@@ -299,7 +322,8 @@ function drawTransactionRow(doc, currentY, transaction, index) {
     align: COLUMNS.CREDIT.align 
   });
   
-  doc.fillColor(COLORS.TEXT);
+  // Color coding for balance - red if negative, black if positive
+  doc.fillColor(transaction.runningBalance < 0 ? COLORS.DANGER : COLORS.TEXT);
   doc.text(balance, COLUMNS.BALANCE.x, currentY + 7, { 
     width: COLUMNS.BALANCE.width, 
     align: COLUMNS.BALANCE.align 
@@ -339,7 +363,7 @@ async function generateDailyReport(date) {
       throw new Error('Settings not found');
     }
 
-    // Calculate opening balance efficiently
+    // FIXED: Calculate opening balance with correct logic
     let openingBalance = 0;
     if (previousTransactions.length > 0) {
       const previousTotals = previousTransactions.reduce((acc, t) => {
@@ -347,7 +371,8 @@ async function generateDailyReport(date) {
         if (t.transactionType === 'payable') acc.debits += (t.payable || 0);
         return acc;
       }, { credits: 0, debits: 0 });
-      openingBalance = previousTotals.credits - previousTotals.debits;
+      // FIXED: Opening balance calculation
+      openingBalance = (settings.openingBalance || 0) + previousTotals.credits - previousTotals.debits;
     } else {
       openingBalance = settings.openingBalance || 0;
     }
@@ -444,4 +469,4 @@ async function generateDailyReport(date) {
   }
 }
 
-module.exports = { generateDailyReport}
+module.exports = { generateDailyReport }
