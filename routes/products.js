@@ -47,6 +47,77 @@ router.get('/check', authMiddleware, async (req, res) => {
     return res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
+router.get('/quantity', authMiddleware, async (req, res) => {
+  console.log('GET /items/quantity received:');
+  console.log('GET /items/quantity received:', req.query);
+  console.log('GET /items/quantity received:', req.user);
+  try {
+    const items = await Item.find({ userId: req.user.userId })
+      .populate('productId', 'name')
+      .select('productId quantity userId');
+
+    if (items.length === 0) {
+      return res.status(404).json({ message: 'No items found' });
+    }
+
+    res.status(200).json({
+      message: 'Items fetched successfully',
+      data: items,
+    });
+  } catch (error) {
+    console.error('Error fetching items:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+router.patch('/:id/quantity', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { operation, amount } = req.body;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid item ID' });
+    }
+
+    if (!['add', 'remove'].includes(operation)) {
+      return res.status(400).json({ message: 'Invalid operation. Use "add" or "remove"' });
+    }
+    if (!Number.isInteger(amount) || amount < 0) {
+      return res.status(400).json({ message: 'Amount must be a non-negative integer' });
+    }
+
+    const item = await Item.findOne({ _id: id, userId: req.user.userId });
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found or unauthorized' });
+    }
+
+    let newQuantity = item.quantity;
+    if (operation === 'add') {
+      newQuantity += amount;
+      if (newQuantity > item.maxStock) {
+        return res.status(400).json({ message: `Quantity cannot exceed maxStock of ${item.maxStock}` });
+      }
+    } else {
+      newQuantity -= amount;
+      if (newQuantity < 0) {
+        return res.status(400).json({ message: 'Quantity cannot be negative' });
+      }
+    }
+
+    const updatedItem = await Item.findByIdAndUpdate(
+      id,
+      { $set: { quantity: newQuantity } },
+      { new: true, runValidators: true }
+    ).populate('productId', 'name');
+
+    res.status(200).json({
+      message: 'Quantity updated successfully',
+      data: updatedItem,
+    });
+  } catch (error) {
+    console.error('Error updating quantity:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 router.get('/audit-logs', authMiddleware, async (req, res) => {
   console.log('GET /items/audit-logs received:');
     console.log('GET /items/audit-logs received:', req.query);
@@ -139,10 +210,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const total = await Item.countDocuments(query);
 
     // Log for debugging
-    console.log('Search term:', search);
-    console.log('Product IDs found:', productIds);
-    console.log('Query:', query);
-    console.log('Items found:', items.length);
+ 
 
     res.json({ items, total });
   } catch (error) {
@@ -390,5 +458,7 @@ router.get('/scan/:barcode', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+
 
 module.exports = router;
