@@ -3,8 +3,6 @@ const jwt = require('jsonwebtoken');
 const Item = require('../models/Item');
 const Product = require('../models/Product');
 const AuditLog = require('../models/AuditLog');
-
-
 const router = express.Router();
 const mongoose = require('mongoose');
 
