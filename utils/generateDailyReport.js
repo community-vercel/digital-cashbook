@@ -415,7 +415,7 @@ async function generateDailyReport(date) {
                 PAGE_CONFIG.MARGIN, 
                 doc.page.height - PAGE_CONFIG.MARGIN - 20, 
                 { align: 'center' })
-         .text('E.&O.E.', 
+         .text('Sharplogicians.', 
                 PAGE_CONFIG.MARGIN, 
                 doc.page.height - PAGE_CONFIG.MARGIN - 10, 
                 { align: 'center' });
