@@ -18,6 +18,7 @@ function scheduleDailyReports() {
   
 const cronJob = cron.schedule('2 0 * * *', async () => {
     const startTime = new Date();
+    
     console.log(`[${startTime.toISOString()}] Starting daily report generation...`);
     
     try {
