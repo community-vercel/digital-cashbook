@@ -12,6 +12,7 @@ exports.addCustomer = async (req, res) => {
   }
 };
 
+
 exports.getCustomers = async (req, res) => {
   const { search } = req.query;
   try {
