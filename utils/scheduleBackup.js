@@ -6,7 +6,7 @@ async function scheduleDailyBackup() {
   const backupService = new BackupService();
 
   // Daily backup at midnight (0:00)
-  cron.schedule('0 0 * * *', async () => {
+  cron.schedule('09 0 * * *', async () => {
     try {
       console.log('Starting daily backup...');
       const backup = await backupService.createBackup();
