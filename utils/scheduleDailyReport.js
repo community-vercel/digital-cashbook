@@ -16,7 +16,7 @@ function scheduleDailyReports() {
   // Only schedule cron job in traditional server environments
   console.log(`[${new Date().toISOString()}] Scheduling daily report cron job...`);
   
-  const cronJob = cron.schedule('2 24 * * *', async () => {
+const cronJob = cron.schedule('2 0 * * *', async () => {
     const startTime = new Date();
     console.log(`[${startTime.toISOString()}] Starting daily report generation...`);
     
