@@ -46,19 +46,34 @@ router.get('/check', authMiddleware, async (req, res) => {
   }
 });
 router.get('/quantity', authMiddleware, async (req, res) => {
-
   try {
+    const page = parseInt(req.query.page) || 1; // Default to page 1
+    const limit = parseInt(req.query.limit) || 10; // Default to 10 items per page
+    const skip = (page - 1) * limit;
+
+    // Fetch items with pagination
     const items = await Item.find({ userId: req.user.userId })
       .populate('productId', 'name')
-      .select('productId quantity userId');
+      .select('productId quantity userId')
+      .skip(skip)
+      .limit(limit);
 
-    if (items.length === 0) {
+    // Get total count for pagination metadata
+    const totalItems = await Item.countDocuments({ userId: req.user.userId });
+
+    if (items.length === 0 && page === 1) {
       return res.status(404).json({ message: 'No items found' });
     }
 
     res.status(200).json({
       message: 'Items fetched successfully',
       data: items,
+      pagination: {
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+        currentPage: page,
+        limit,
+      },
     });
   } catch (error) {
     console.error('Error fetching items:', error);
