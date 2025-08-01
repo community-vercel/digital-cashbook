@@ -6,20 +6,10 @@ const { sendDailyReportEmail } = require('../utils/sendEmail');
 const { createManualBackup } = require('../utils/scheduleBackup');
 
 // Middleware to verify cron requests (optional security)
-const verifyCronRequest = (req, res, next) => {
-  // Vercel sets this header for cron jobs
-  const authHeader = req.headers.authorization;
-  const cronSecret = process.env.CRON_SECRET;
-  
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  
-  next();
-};
+
 
 // Daily report cron endpoint
-router.post('/daily-report', verifyCronRequest, async (req, res) => {
+router.post('/daily-report',  async (req, res) => {
   const startTime = new Date();
   
   try {
@@ -63,7 +53,7 @@ router.post('/daily-report', verifyCronRequest, async (req, res) => {
 });
 
 // Daily backup cron endpoint
-router.post('/daily-backup', verifyCronRequest, async (req, res) => {
+router.post('/daily-backup',  async (req, res) => {
   const startTime = new Date();
   
   try {
