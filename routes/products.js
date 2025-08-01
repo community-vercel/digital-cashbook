@@ -10,7 +10,7 @@ const authMiddleware = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
 
-  
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
@@ -46,9 +46,7 @@ router.get('/check', authMiddleware, async (req, res) => {
   }
 });
 router.get('/quantity', authMiddleware, async (req, res) => {
-  console.log('GET /items/quantity received:');
-  console.log('GET /items/quantity received:', req.query);
-  console.log('GET /items/quantity received:', req.user);
+
   try {
     const items = await Item.find({ userId: req.user.userId })
       .populate('productId', 'name')
@@ -101,21 +99,42 @@ router.patch('/:id/quantity', authMiddleware, async (req, res) => {
       }
     }
 
+    // Prepare changes for audit log
+    const changes = {
+      quantity: {
+        old: item.quantity,
+        new: newQuantity,
+      },
+
+    };
+
     const updatedItem = await Item.findByIdAndUpdate(
       id,
       { $set: { quantity: newQuantity } },
       { new: true, runValidators: true }
     ).populate('productId', 'name');
 
+    // Create audit log entry
+    const auditLog = new AuditLog({
+      action: 'UPDATE',
+      entity: 'Item',
+      entityId: updatedItem._id,
+      userId: req.user.userId,
+      changes,
+    });
+    await auditLog.save();
+
+    console.log('Quantity updated:', updatedItem);
     res.status(200).json({
       message: 'Quantity updated successfully',
       data: updatedItem,
     });
   } catch (error) {
     console.error('Error updating quantity:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' });
   }
 });
+
 router.get('/audit-logs', authMiddleware, async (req, res) => {
   console.log('GET /items/audit-logs received:');
     console.log('GET /items/audit-logs received:', req.query);
