@@ -6,20 +6,18 @@
   "routes": [
     { "src": "/(.*)", "dest": "app.js" }
   ],
-
-
-"crons": [
+  "crons": [
     {
-      "path": "/api/cron/daily-report",
-      "schedule": "19 0 * * *"
+      "path": "/api/cron/daily-backup",
+      "schedule": "28 0 * * *"
     },
     {
-      "path": "/api/cron/daily-backup", 
-      "schedule": "19 0 * * *"
+      "path": "/api/cron/daily-report", 
+      "schedule": "29 0 * * *"
     }
   ],
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "CRON_SECRET": "@cron_secret"
   }
- 
 }
