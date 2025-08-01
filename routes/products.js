@@ -61,6 +61,7 @@ router.get('/quantity', authMiddleware, async (req, res) => {
     // Get total count for pagination metadata
     const totalItems = await Item.countDocuments({ userId: req.user.userId });
 
+    
     if (items.length === 0 && page === 1) {
       return res.status(404).json({ message: 'No items found' });
     }
