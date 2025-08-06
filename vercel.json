@@ -18,6 +18,6 @@
   ],
   "env": {
     "NODE_ENV": "production",
-    "CRON_SECRET": "@cron_secret"
+    "CRON_SECRET": "super_secret_cron_key_2025"
   }
 }

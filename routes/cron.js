@@ -8,7 +8,7 @@ const { createManualBackup } = require('../utils/scheduleBackup');
 // Middleware to verify cron requests (optional security)
 function verifyCronRequest(req, res, next) {
   // Vercel adds specific headers to cron requests
-  const cronSecret = process.env.CRON_SECRET;
+  const cronSecret ='super_secret_cron_key_2025';
   const authHeader = req.headers.authorization;
   
   // If you have a CRON_SECRET environment variable, verify it
