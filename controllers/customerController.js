@@ -102,6 +102,9 @@ exports.getCustomerByNameOrPhone = async (req, res) => {
       searchQuery.shopId = selectedShopId;
     }
 
+
+
+    
     if (name || phone) {
       searchQuery.$or = [];
       if (name) searchQuery.$or.push({ name });
