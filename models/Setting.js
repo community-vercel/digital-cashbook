@@ -9,6 +9,9 @@ const settingSchema = new mongoose.Schema({
   openingBalanceSet: { type: Boolean, default: false }, // Flag to prevent updates
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+  shopId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true }
+
+
 });
 
 module.exports = mongoose.model('Setting', settingSchema);

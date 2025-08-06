@@ -74,6 +74,8 @@ app.use('/api/product', productsRoutes);
 app.use('/api/colors', colorRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/cron', cronRoutes); // Add cron routes for Vercel
+app.use('/api/shops', require('./routes/shop'));
+
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
