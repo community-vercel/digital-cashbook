@@ -31,7 +31,7 @@ router.post('/', verifySuperadmin, async (req, res) => {
   }
 });
 
-router.get('/', verifySuperadmin, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const shops = await Shop.find();
     res.json(shops);

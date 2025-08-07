@@ -1,9 +1,10 @@
+const Transaction = require('../models/Transaction');
+const Customer = require('../models/Customer');
+const { put, del } = require('@vercel/blob');
 const mongoose = require('mongoose');
-const Customer = require('../models/Customer'); // Adjust path as needed
-const Transaction = require('../models/Transaction'); // Adjust path as needed
-const Shop = require('../models/Shop'); // Adjust path as needed
-const { put } = require('@vercel/blob'); // Ensure Vercel Blob is imported
-
+const { generateDailyReport } = require('../utils/generateDailyReport');
+const Setting = require('../models/Setting');
+const Shop = require('../models/Shop');
 const determineShopContext = (user, requestShopId = null) => {
   let selectedShopId = null;
   let isAllShops = false;
