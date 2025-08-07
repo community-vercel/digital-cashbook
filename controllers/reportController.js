@@ -1,8 +1,8 @@
-// controllers/reportController.js
 const Transaction = require('../models/Transaction');
 const Customer = require('../models/Customer');
 const Setting = require('../models/Setting');
 const User = require('../models/User');
+const Shop = require('../models/Shop');
 const PDFKit = require('pdfkit');
 const ExcelJS = require('exceljs');
 const { put } = require('@vercel/blob');
@@ -10,7 +10,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
 const mongoose = require('mongoose');
-
+const os = require('os');
 // Helper function to safely parse dates as UTC
 const parseUTCDate = (dateString, isEndOfDay = false) => {
   if (!dateString || typeof dateString !== 'string') {
@@ -48,32 +48,70 @@ const truncateDescription = (description) => {
 
 exports.getSummaryReport = async (req, res) => {
   try {
-    const { startDate, endDate, format, customerId, role, shopId } = req.query;
+    const { startDate, endDate, format, customerId, shopId } = req.query;
 
-    // Determine shopId based on user role
+    // Check if req.user exists
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized: No user information provided' });
+    }
+
+    // Determine shop context based on user role and shopId
     let selectedShopId = req.user.shopId;
+    let isAllShops = false;
+    let shopSettings = null;
+    let shopName = 'All Shops'; // Default for all shops
+
     if (req.user.role === 'superadmin' && shopId) {
-      if (!mongoose.Types.ObjectId.isValid(shopId)) {
+      if (shopId === 'all') {
+        isAllShops = true;
+      } else if (mongoose.Types.ObjectId.isValid(shopId)) {
+        selectedShopId = shopId;
+      } else {
         return res.status(400).json({ error: 'Invalid shopId' });
       }
-      selectedShopId = shopId;
-    }
-    if (!selectedShopId) {
-      return res.status(400).json({ error: 'Shop ID required' });
     }
 
-    // Fetch settings for the selected shop
-    const settings = await Setting.findOne({ shopId: selectedShopId });
-    if (!settings) {
-      return res.status(404).json({ error: 'Settings not found for this shop' });
+    // Fetch settings based on shop context
+    if (isAllShops) {
+      // Aggregate opening balance across all shops
+      const allSettings = await Setting.find({});
+      if (allSettings.length === 0) {
+        return res.status(404).json({ error: 'No shop settings found' });
+      }
+      const totalOpeningBalance = allSettings.reduce(
+        (sum, setting) => sum + getNumericValue(setting.openingBalance),
+        0
+      );
+      shopSettings = {
+        openingBalance: totalOpeningBalance,
+        siteName: 'All Shops',
+        logo: allSettings[0]?.logo || '',
+      };
+    } else {
+      if (!selectedShopId) {
+        return res.status(400).json({ error: 'Shop ID required' });
+      }
+      shopSettings = await Setting.findOne({ shopId: selectedShopId });
+      if (!shopSettings) {
+        return res.status(404).json({ error: 'Settings not found for this shop' });
+      }
+      // Fetch shop name for single shop
+      const shop = await Shop.findById(selectedShopId);
+      shopName = shop?.name || shopSettings.siteName;
     }
 
     // Check if user is admin
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id || req.user.userId || req.user._id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     const isAdmin = user.role === 'admin' || user.role === 'superadmin';
 
-    // Build query with shopId filter
-    const query = { shopId: selectedShopId };
+    // Build query
+    const query = {};
+    if (!isAllShops) {
+      query.shopId = selectedShopId; // Apply shopId filter only for single shop
+    }
 
     // Parse and validate dates with UTC handling
     let startDateParsed = null;
@@ -127,10 +165,7 @@ exports.getSummaryReport = async (req, res) => {
     // Calculate opening balance
     let openingBalance = 0;
     if (startDateParsed) {
-      const openingBalanceQuery = { shopId: selectedShopId, date: { $lt: startDateParsed } };
-      if (customerId) {
-        openingBalanceQuery.customerId = customerId;
-      }
+      const openingBalanceQuery = { ...query, date: { $lt: startDateParsed } };
       const previousTransactions = await Transaction.find(openingBalanceQuery);
       if (previousTransactions.length > 0) {
         openingBalance = previousTransactions.reduce((sum, t) => {
@@ -139,10 +174,10 @@ exports.getSummaryReport = async (req, res) => {
           return sum + (t.transactionType === 'receivable' ? receivable : -payable);
         }, 0);
       } else {
-        openingBalance = settings.openingBalance !== null ? cleanAmount(settings.openingBalance) : 0;
+        openingBalance = shopSettings.openingBalance !== null ? cleanAmount(shopSettings.openingBalance) : 0;
       }
     } else {
-      openingBalance = settings.openingBalance !== null ? cleanAmount(settings.openingBalance) : 0;
+      openingBalance = shopSettings.openingBalance !== null ? cleanAmount(shopSettings.openingBalance) : 0;
     }
 
     // Category summary
@@ -177,7 +212,7 @@ exports.getSummaryReport = async (req, res) => {
         },
         transactionCount: transactions.length,
         customerId: customerId || null,
-        shopId: selectedShopId,
+        shopId: isAllShops ? 'all' : selectedShopId,
       },
     };
 
@@ -197,7 +232,7 @@ exports.getSummaryReport = async (req, res) => {
         // Fetch logo
         let logoBuffer;
         try {
-          const response = await axios.get(settings.logo, { responseType: 'arraybuffer' });
+          const response = await axios.get(shopSettings.logo, { responseType: 'arraybuffer' });
           logoBuffer = Buffer.from(response.data);
         } catch (error) {
           console.error('Error fetching logo image:', error.message);
@@ -252,7 +287,7 @@ exports.getSummaryReport = async (req, res) => {
           doc.font('Helvetica-Bold')
             .fontSize(14)
             .fillColor('#1f2937')
-            .text(settings.siteName, leftMargin, topMargin + 20, { width: usableWidth, align: 'center' });
+            .text(shopName, leftMargin, topMargin + 20, { width: usableWidth, align: 'center' });
 
           if (customerId && transactions[0]?.customerId?.name) {
             doc.font('Helvetica')
@@ -263,7 +298,7 @@ exports.getSummaryReport = async (req, res) => {
             doc.font('Helvetica')
               .fontSize(12)
               .fillColor('#374151')
-              .text('All Users', leftMargin, topMargin + 40, { width: usableWidth, align: 'center' });
+              .text(isAllShops ? 'All Shops' : 'Shop Report', leftMargin, topMargin + 40, { width: usableWidth, align: 'center' });
           }
 
           doc.moveTo(leftMargin, topMargin + 50)
@@ -279,7 +314,7 @@ exports.getSummaryReport = async (req, res) => {
           doc.font('Helvetica')
             .fontSize(8)
             .fillColor('#6b7280')
-            .text(settings.siteName, leftMargin, pageHeight - bottomMargin - 30, { align: 'left' })
+            .text(shopName, leftMargin, pageHeight - bottomMargin - 30, { align: 'left' })
             .text(`Page ${pageNumber}`, pageWidth - rightMargin, pageHeight - bottomMargin - 30, { align: 'right' });
           doc.moveTo(leftMargin, pageHeight - bottomMargin - 40)
             .lineTo(pageWidth - rightMargin, pageHeight - bottomMargin - 40)
@@ -609,7 +644,7 @@ exports.getSummaryReport = async (req, res) => {
       };
 
       worksheet.mergeCells('C1:F1');
-      worksheet.getCell('C1').value = `${settings.siteName || 'Your Company'}\nFinancial Summary Report`;
+      worksheet.getCell('C1').value = `${shopName}\nFinancial Summary Report`;
       worksheet.getCell('C1').font = { name: 'Calibri', size: 18, bold: true, color: { argb: colors.secondary } };
       worksheet.getCell('C1').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       worksheet.getCell('C1').fill = {
@@ -642,7 +677,7 @@ exports.getSummaryReport = async (req, res) => {
         applyBorders(3, 3, ['C', 'D', 'E', 'F']);
       } else if (isAdmin) {
         worksheet.mergeCells('C3:F3');
-        worksheet.getCell('C3').value = 'All Users';
+        worksheet.getCell('C3').value = isAllShops ? 'All Shops' : 'Shop Report';
         worksheet.getCell('C3').font = { name: 'Calibri', size: 11, italic: true, color: { argb: colors.text } };
         worksheet.getCell('C3').alignment = { horizontal: 'center', vertical: 'middle' };
         worksheet.getCell('C3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.background } };

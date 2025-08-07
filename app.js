@@ -20,6 +20,7 @@ const backupRoutes = require('./routes/backup');
 const { scheduleDailyBackup, cleanupOldBackups, createManualBackup } = require('./utils/scheduleBackup');
 const cronRoutes = require('./routes/cron');
 require('dotenv').config();
+const quotationRouter = require('./routes/quotation');
 
 const app = express();
 
@@ -75,6 +76,8 @@ app.use('/api/colors', colorRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/cron', cronRoutes); // Add cron routes for Vercel
 app.use('/api/shops', require('./routes/shop'));
+app.use('/api/quotation', quotationRouter);
+
 
 
 // Health check endpoint

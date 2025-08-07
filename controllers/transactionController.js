@@ -6,65 +6,161 @@ const mongoose = require('mongoose');
 const { generateDailyReport } = require('../utils/generateDailyReport');
 const Setting = require('../models/Setting');
 const Shop=require('../models/Shop');
+
+
+const determineShopContext = (user, requestShopId = null) => {
+  let selectedShopId = null;
+  let isAllShops = false;
+
+  if (user.role === 'superadmin') {
+    if (requestShopId) {
+      if (requestShopId === 'all') {
+        isAllShops = true;
+      } else if (mongoose.Types.ObjectId.isValid(requestShopId)) {
+        selectedShopId = requestShopId;
+      } else {
+        throw new Error('Invalid shopId format');
+      }
+    }
+    // If no shopId provided for superadmin, default to 'all'
+    else {
+      isAllShops = true;
+    }
+  } else {
+    selectedShopId = user.shopId;
+    if (!selectedShopId) {
+      throw new Error('Shop ID required for non-superadmin users');
+    }
+  }
+
+  return { selectedShopId, isAllShops };
+};
+
+/**
+ * Validate shop existence and user access
+ */
+const validateShopAccess = async (user, shopId) => {
+  if (!shopId) return null;
+  
+  const shop = await Shop.findById(shopId);
+  if (!shop) {
+    throw new Error(`Shop not found: ${shopId}`);
+  }
+  
+  // Additional access validation can be added here
+  // For example, check if user has access to this specific shop
+  
+  return shop;
+};
+
 exports.addTransaction = async (req, res) => {
-  const { customerId, customerName, phone, totalAmount, payable, receivable, description, category, type, isRecurring, date, dueDate, transactionType, shopId } = req.body;
+  const { 
+    customerId, 
+    customerName, 
+    phone, 
+    totalAmount, 
+    payable, 
+    receivable, 
+    description, 
+    category, 
+    type, 
+    isRecurring, 
+    date, 
+    dueDate, 
+    transactionType, 
+    shopId 
+  } = req.body;
+  
   let transactionImage = null;
 
   try {
-    // Validate transactionType
+    // Validate transaction type
     if (!['payable', 'receivable'].includes(transactionType)) {
-      return res.status(400).json({ message: 'Invalid transaction type. Must be "payable" or "receivable"' });
+      return res.status(400).json({ 
+        message: 'Invalid transaction type. Must be "payable" or "receivable"' 
+      });
     }
 
     // Validate amounts
-    if (isNaN(totalAmount) || (transactionType === 'payable' && isNaN(payable)) || (transactionType === 'receivable' && isNaN(receivable))) {
-      return res.status(400).json({ message: 'Invalid amount fields' });
+    const parsedTotalAmount = parseFloat(totalAmount);
+    const parsedPayable = parseFloat(payable || 0);
+    const parsedReceivable = parseFloat(receivable || 0);
+    
+    if (isNaN(parsedTotalAmount) || parsedTotalAmount <= 0) {
+      return res.status(400).json({ message: 'Valid total amount is required' });
+    }
+    
+    if (transactionType === 'payable' && (isNaN(parsedPayable) || parsedPayable <= 0)) {
+      return res.status(400).json({ message: 'Valid payable amount is required' });
+    }
+    
+    if (transactionType === 'receivable' && (isNaN(parsedReceivable) || parsedReceivable <= 0)) {
+      return res.status(400).json({ message: 'Valid receivable amount is required' });
     }
 
-    // Determine shopId based on user role
-    let selectedShopId = req.user.shopId;
-    if (req.user.role === 'superadmin' && shopId) {
-      if (!mongoose.Types.ObjectId.isValid(shopId)) {
-        return res.status(400).json({ message: 'Invalid shopId' });
-      }
-      selectedShopId = shopId;
-    }
+    // Determine shop context
+    const { selectedShopId } = determineShopContext(req.user, shopId);
+    
     if (!selectedShopId) {
-      return res.status(400).json({ message: 'Shop ID required' });
+      return res.status(400).json({ message: 'Shop ID is required for transaction creation' });
     }
+
+    // Validate shop access
+    const shop = await validateShopAccess(req.user, selectedShopId);
 
     // Handle file upload to Vercel Blob
     if (req.files && req.files.image) {
-      const file = req.files.image;
-      const fileName = `${Date.now()}-${file.name}`;
-      const { url } = await put(`transactions/${fileName}`, file.data, {
-        access: 'public',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
-      transactionImage = url;
+      try {
+        const file = req.files.image;
+        const fileName = `transactions/${selectedShopId}/${Date.now()}-${file.name}`;
+        const { url } = await put(fileName, file.data, {
+          access: 'public',
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+        transactionImage = url;
+      } catch (uploadError) {
+        console.error('Image upload error:', uploadError);
+        return res.status(500).json({ message: 'Failed to upload image' });
+      }
     }
 
+    // Handle customer
     let customer;
     if (customerId) {
       customer = await Customer.findOne({ _id: customerId, shopId: selectedShopId });
       if (!customer) {
-        return res.status(404).json({ message: 'Customer not found for this shop' });
+        return res.status(404).json({ 
+          message: 'Customer not found for this shop' 
+        });
       }
-    } else if (customerName) {
-      customer = await Customer.findOne({ userId: req.user.id, name: customerName, shopId: selectedShopId });
+    } else if (customerName?.trim()) {
+      // Find existing customer or create new one
+      customer = await Customer.findOne({ 
+        name: { $regex: new RegExp(`^${customerName.trim()}$`, 'i') },
+        shopId: selectedShopId 
+      });
+      
       if (!customer) {
-        customer = new Customer({ userId: req.user.id, name: customerName, phone, shopId: selectedShopId });
+        customer = new Customer({ 
+          userId: req.user.id || req.user.userId, 
+          name: customerName.trim(), 
+          phone: phone?.trim() || '', 
+          shopId: selectedShopId,
+          balance: 0
+        });
         await customer.save();
       }
     } else {
-      return res.status(400).json({ message: 'Customer ID or name required' });
+      return res.status(400).json({ message: 'Customer ID or name is required' });
     }
 
+    // Prepare transaction date
     const currentTimestamp = new Date();
     let transactionDate = currentTimestamp;
+    
     if (date) {
       const providedDate = new Date(date);
-      if (!isNaN(providedDate)) {
+      if (!isNaN(providedDate.getTime())) {
         transactionDate = new Date(
           providedDate.getFullYear(),
           providedDate.getMonth(),
@@ -77,34 +173,154 @@ exports.addTransaction = async (req, res) => {
       }
     }
 
+    // Create transaction
     const transaction = new Transaction({
       userId: req.user.id || req.user.userId,
       customerId: customer._id,
       shopId: selectedShopId,
-      totalAmount,
-      payable: transactionType === 'payable' ? payable : 0,
-      receivable: transactionType === 'receivable' ? receivable : 0,
-      description,
-      category,
-      type,
-      isRecurring,
+      totalAmount: parsedTotalAmount,
+      payable: transactionType === 'payable' ? parsedPayable : 0,
+      receivable: transactionType === 'receivable' ? parsedReceivable : 0,
+      description: description?.trim() || '',
+      category: category?.trim() || 'Other',
+      type: type || 'Cash',
+      isRecurring: Boolean(isRecurring),
       transactionImage,
       transactionType,
       date: transactionDate,
       dueDate: dueDate ? new Date(dueDate) : undefined,
       createdAt: currentTimestamp,
     });
+
     await transaction.save();
 
-    customer.balance += transactionType === 'receivable' ? parseFloat(receivable) : -parseFloat(payable);
+    // Update customer balance
+    const balanceChange = transactionType === 'receivable' 
+      ? parsedReceivable 
+      : -parsedPayable;
+    
+    customer.balance = (customer.balance || 0) + balanceChange;
     await customer.save();
 
-    res.json({ transaction, customer });
+    // Populate the transaction for response
+    await transaction.populate('customerId', 'name phone balance');
+
+    res.status(201).json({ 
+      message: 'Transaction created successfully',
+      transaction,
+      customer: {
+        _id: customer._id,
+        name: customer.name,
+        balance: customer.balance
+      }
+    });
+
   } catch (error) {
     console.error('Error in addTransaction:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
+
+// exports.addTransaction = async (req, res) => {
+//   const { customerId, customerName, phone, totalAmount, payable, receivable, description, category, type, isRecurring, date, dueDate, transactionType, shopId } = req.body;
+//   let transactionImage = null;
+
+//   try {
+//     // Validate transactionType
+//     if (!['payable', 'receivable'].includes(transactionType)) {
+//       return res.status(400).json({ message: 'Invalid transaction type. Must be "payable" or "receivable"' });
+//     }
+
+//     // Validate amounts
+//     if (isNaN(totalAmount) || (transactionType === 'payable' && isNaN(payable)) || (transactionType === 'receivable' && isNaN(receivable))) {
+//       return res.status(400).json({ message: 'Invalid amount fields' });
+//     }
+
+//     // Determine shopId based on user role
+//     let selectedShopId = req.user.shopId;
+//     if (req.user.role === 'superadmin' && shopId) {
+//       if (!mongoose.Types.ObjectId.isValid(shopId)) {
+//         return res.status(400).json({ message: 'Invalid shopId' });
+//       }
+//       selectedShopId = shopId;
+//     }
+//     if (!selectedShopId) {
+//       return res.status(400).json({ message: 'Shop ID required' });
+//     }
+
+//     // Handle file upload to Vercel Blob
+//     if (req.files && req.files.image) {
+//       const file = req.files.image;
+//       const fileName = `${Date.now()}-${file.name}`;
+//       const { url } = await put(`transactions/${fileName}`, file.data, {
+//         access: 'public',
+//         token: process.env.BLOB_READ_WRITE_TOKEN,
+//       });
+//       transactionImage = url;
+//     }
+
+//     let customer;
+//     if (customerId) {
+//       customer = await Customer.findOne({ _id: customerId, shopId: selectedShopId });
+//       if (!customer) {
+//         return res.status(404).json({ message: 'Customer not found for this shop' });
+//       }
+//     } else if (customerName) {
+//       customer = await Customer.findOne({ userId: req.user.id, name: customerName, shopId: selectedShopId });
+//       if (!customer) {
+//         customer = new Customer({ userId: req.user.id, name: customerName, phone, shopId: selectedShopId });
+//         await customer.save();
+//       }
+//     } else {
+//       return res.status(400).json({ message: 'Customer ID or name required' });
+//     }
+
+//     const currentTimestamp = new Date();
+//     let transactionDate = currentTimestamp;
+//     if (date) {
+//       const providedDate = new Date(date);
+//       if (!isNaN(providedDate)) {
+//         transactionDate = new Date(
+//           providedDate.getFullYear(),
+//           providedDate.getMonth(),
+//           providedDate.getDate(),
+//           currentTimestamp.getHours(),
+//           currentTimestamp.getMinutes(),
+//           currentTimestamp.getSeconds(),
+//           currentTimestamp.getMilliseconds()
+//         );
+//       }
+//     }
+
+//     const transaction = new Transaction({
+//       userId: req.user.id || req.user.userId,
+//       customerId: customer._id,
+//       shopId: selectedShopId,
+//       totalAmount,
+//       payable: transactionType === 'payable' ? payable : 0,
+//       receivable: transactionType === 'receivable' ? receivable : 0,
+//       description,
+//       category,
+//       type,
+//       isRecurring,
+//       transactionImage,
+//       transactionType,
+//       date: transactionDate,
+//       dueDate: dueDate ? new Date(dueDate) : undefined,
+//       createdAt: currentTimestamp,
+//     });
+//     await transaction.save();
+
+//     customer.balance += transactionType === 'receivable' ? parseFloat(receivable) : -parseFloat(payable);
+//     await customer.save();
+
+//     res.json({ transaction, customer });
+//   } catch (error) {
+//     console.error('Error in addTransaction:', error);
+//     res.status(500).json({ message: 'Server error' });
+//   }
+// };
 
 
 exports.getDailyReport = async (req, res) => {
@@ -480,13 +696,24 @@ exports.getTransactions = async (req, res) => {
 
 // Fixed addTransaction function
 
+// controllers/transactionController.js - Fixed updateTransaction and deleteTransaction functions
 
 exports.updateTransaction = async (req, res) => {
   try {
-    const { shopId, transactionType, totalAmount, payable, receivable } = req.body;
+    const { shopId, transactionType, totalAmount, payable, receivable, customerId } = req.body;
     let transactionImage = req.body.transactionImage;
 
-    // Determine shopId
+    // Validate transactionType
+    if (!['payable', 'receivable'].includes(transactionType)) {
+      return res.status(400).json({ message: 'Invalid transaction type. Must be "payable" or "receivable"' });
+    }
+
+    // Validate amounts
+    if (isNaN(totalAmount) || (transactionType === 'payable' && isNaN(payable)) || (transactionType === 'receivable' && isNaN(receivable))) {
+      return res.status(400).json({ message: 'Invalid amount fields' });
+    }
+
+    // Determine shopId based on user role - FIXED
     let selectedShopId = req.user.shopId;
     if (req.user.role === 'superadmin' && shopId) {
       if (!mongoose.Types.ObjectId.isValid(shopId)) {
@@ -498,8 +725,20 @@ exports.updateTransaction = async (req, res) => {
       return res.status(400).json({ message: 'Shop ID required' });
     }
 
-    if (req.files && req.files.transactionImage) {
-      const file = req.files.transactionImage;
+    // Get the existing transaction to check shop ownership - ADDED
+    const existingTransaction = await Transaction.findById(req.params.id);
+    if (!existingTransaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    // Verify the transaction belongs to the correct shop - ADDED
+    if (existingTransaction.shopId.toString() !== selectedShopId.toString()) {
+      return res.status(403).json({ message: 'Access denied: Transaction belongs to a different shop' });
+    }
+
+    // Handle file upload to Vercel Blob
+    if (req.files && req.files.image) {
+      const file = req.files.image;
       const fileName = `${Date.now()}-${file.name}`;
       const { url } = await put(`transactions/${fileName}`, file.data, {
         access: 'public',
@@ -507,41 +746,74 @@ exports.updateTransaction = async (req, res) => {
       });
       transactionImage = url;
 
-      const existingTransaction = await Transaction.findById(req.params.id);
+      // Delete old image if it exists
       if (existingTransaction.transactionImage) {
-        await del(existingTransaction.transactionImage, {
-          token: process.env.BLOB_READ_WRITE_TOKEN,
-        });
+        try {
+          await del(existingTransaction.transactionImage, {
+            token: process.env.BLOB_READ_WRITE_TOKEN,
+          });
+        } catch (deleteError) {
+          console.error('Error deleting old image:', deleteError);
+          // Continue with update even if image deletion fails
+        }
       }
     }
 
+    // Validate customer belongs to the same shop - ADDED
+    if (customerId) {
+      const customer = await Customer.findOne({ _id: customerId, shopId: selectedShopId });
+      if (!customer) {
+        return res.status(404).json({ message: 'Customer not found for this shop' });
+      }
+    }
+
+    // Store old transaction values for balance adjustment - MOVED UP
+    const oldTransactionType = existingTransaction.transactionType;
+    const oldPayable = existingTransaction.payable || 0;
+    const oldReceivable = existingTransaction.receivable || 0;
+
+    // Update the transaction - FIXED query to include shopId
     const transaction = await Transaction.findOneAndUpdate(
-      { _id: req.params.id, shopId: selectedShopId },
+      { _id: req.params.id, shopId: selectedShopId }, // FIXED: Added shopId filter
       {
         ...req.body,
-        totalAmount,
-        payable: transactionType === 'payable' ? payable : 0,
-        receivable: transactionType === 'receivable' ? receivable : 0,
-        transactionImage,
-        date: req.body.date || Date.now(),
-        dueDate: req.body.dueDate || null,
+        shopId: selectedShopId, // Ensure shopId is maintained
+        totalAmount: parseFloat(totalAmount),
+        payable: transactionType === 'payable' ? parseFloat(payable || 0) : 0,
+        receivable: transactionType === 'receivable' ? parseFloat(receivable || 0) : 0,
+        transactionImage: transactionImage || existingTransaction.transactionImage,
+        transactionType,
+        date: req.body.date || existingTransaction.date,
+        dueDate: req.body.dueDate || existingTransaction.dueDate,
       },
       { new: true }
     ).populate('customerId', 'name');
 
-    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found or access denied' });
+    }
 
-    const customer = await Customer.findById(transaction.customerId);
+    // Update customer balance - FIXED calculation
+    const customer = await Customer.findOne({ _id: transaction.customerId._id, shopId: selectedShopId });
     if (customer) {
-      const oldTransaction = await Transaction.findById(req.params.id);
-      const balanceAdjustment =
-        (oldTransaction.transactionType === 'receivable' ? -oldTransaction.receivable : oldTransaction.payable) +
-        (transactionType === 'receivable' ? parseFloat(receivable || 0) : -parseFloat(payable || 0));
+      // Reverse the old transaction's effect on balance
+      const oldBalanceEffect = oldTransactionType === 'receivable' ? oldReceivable : -oldPayable;
+      
+      // Apply the new transaction's effect on balance
+      const newBalanceEffect = transactionType === 'receivable' ? parseFloat(receivable || 0) : -parseFloat(payable || 0);
+      
+      // Net adjustment = new effect - old effect
+      const balanceAdjustment = newBalanceEffect - oldBalanceEffect;
+      
       customer.balance += balanceAdjustment;
       await customer.save();
     }
 
-    res.json(transaction);
+    res.json({
+      message: 'Transaction updated successfully',
+      transaction,
+      customer: customer ? { _id: customer._id, name: customer.name, balance: customer.balance } : null
+    });
   } catch (error) {
     console.error('Error in updateTransaction:', error);
     res.status(500).json({ message: 'Server error' });
@@ -550,29 +822,102 @@ exports.updateTransaction = async (req, res) => {
 
 exports.deleteTransaction = async (req, res) => {
   try {
-    const selectedShopId = req.user.shopId;
+    // Determine shopId based on user role - FIXED
+    let selectedShopId = req.user.shopId;
+    if (req.user.role === 'superadmin') {
+      // For superadmin, we need to get the transaction first to find its shopId
+      const transactionToDelete = await Transaction.findById(req.params.id);
+      if (!transactionToDelete) {
+        return res.status(404).json({ message: 'Transaction not found' });
+      }
+      selectedShopId = transactionToDelete.shopId;
+    }
+
     if (!selectedShopId) {
       return res.status(400).json({ message: 'Shop ID required' });
     }
 
-    const transaction = await Transaction.findOneAndDelete({ _id: req.params.id, shopId: selectedShopId });
-    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+    // Delete the transaction with shop validation - FIXED
+    const transaction = await Transaction.findOneAndDelete({ 
+      _id: req.params.id, 
+      shopId: selectedShopId 
+    });
 
-    const customer = await Customer.findById(transaction.customerId);
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found or access denied' });
+    }
+
+    // Update customer balance - FIXED to validate shop ownership
+    const customer = await Customer.findOne({ _id: transaction.customerId, shopId: selectedShopId });
     if (customer) {
-      customer.balance += transaction.transactionType === 'receivable' ? -transaction.receivable : transaction.payable;
+      // Reverse the transaction's effect on customer balance
+      const balanceAdjustment = transaction.transactionType === 'receivable' 
+        ? -(transaction.receivable || 0)  // Subtract receivable 
+        : (transaction.payable || 0);     // Add back payable
+      
+      customer.balance += balanceAdjustment;
       await customer.save();
     }
 
+    // Delete transaction image if exists
     if (transaction.transactionImage) {
-      await del(transaction.transactionImage, {
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
+      try {
+        await del(transaction.transactionImage, {
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+      } catch (deleteError) {
+        console.error('Error deleting transaction image:', deleteError);
+        // Continue even if image deletion fails
+      }
     }
 
-    res.json({ message: 'Transaction deleted' });
+    res.json({ 
+      message: 'Transaction deleted successfully',
+      deletedTransaction: {
+        _id: transaction._id,
+        description: transaction.description,
+        totalAmount: transaction.totalAmount
+      }
+    });
   } catch (error) {
     console.error('Error in deleteTransaction:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// BONUS: Add a function to verify transaction ownership (can be used as middleware)
+exports.verifyTransactionOwnership = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    // Determine shopId based on user role
+    let selectedShopId = req.user.shopId;
+    if (req.user.role === 'superadmin') {
+      // Superadmin can access transactions from any shop, but we still validate existence
+      const transaction = await Transaction.findById(id);
+      if (!transaction) {
+        return res.status(404).json({ message: 'Transaction not found' });
+      }
+      selectedShopId = transaction.shopId;
+    }
+
+    if (!selectedShopId) {
+      return res.status(400).json({ message: 'Shop ID required' });
+    }
+
+    // Verify transaction exists and belongs to the correct shop
+    const transaction = await Transaction.findOne({ _id: id, shopId: selectedShopId });
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found or access denied' });
+    }
+
+    // Attach transaction and shopId to request for use in route handlers
+    req.transaction = transaction;
+    req.selectedShopId = selectedShopId;
+    
+    next();
+  } catch (error) {
+    console.error('Error in verifyTransactionOwnership:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

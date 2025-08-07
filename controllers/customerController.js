@@ -2,29 +2,76 @@
 const Customer = require('../models/Customer');
 const Receipt = require('../models/Receipt');
 const Payment = require('../models/Payment');
+const Shop = require('../models/Shop');
 const mongoose = require('mongoose');
 
-exports.addCustomer = async (req, res) => {
-  const { name, phone, address } = req.body;
+
+exports.getCustomers = async (req, res) => {
+  const { search, shopId } = req.query;
 
   try {
     let selectedShopId = req.user.shopId;
+
+    // Handle superadmin case
+    if (req.user.role === 'superadmin' && shopId) {
+      if (shopId !== 'all' && !mongoose.Types.ObjectId.isValid(shopId)) {
+        return res.status(400).json({ message: 'Invalid shopId' });
+      }
+      selectedShopId = shopId === 'all' ? null : shopId;
+    } else if (!selectedShopId && req.user.role !== 'superadmin') {
+      return res.status(400).json({ message: 'Shop ID required for non-superadmin users' });
+    }
+
+    // Build base query
+    const baseQuery = {};
+    if (selectedShopId) {
+      baseQuery.shopId = selectedShopId;
+    }
+
+    // Add search functionality
+    if (search) {
+      baseQuery.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    console.log('Customer query:', { baseQuery, userId: req.user.id || req.user.userId, role: req.user.role });
+
+    const customers = await Customer.find(baseQuery).populate('shopId', 'name');
+    console.log('Found customers:', customers.length);
+
+    res.json(customers);
+  } catch (error) {
+    console.error('Error in getCustomers:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+exports.addCustomer = async (req, res) => {
+  const { name, phone, address, shopId } = req.body;
+
+  try {
+    let selectedShopId = req.user.shopId;
+
     console.log('Request user info:', {
       userId: req.user.id || req.user.userId,
       role: req.user.role,
       shopId: req.user.shopId,
-      requestBodyShopId: req.body.shopId
+      requestBodyShopId: shopId,
     });
-    
-    if (req.user.role === 'superadmin' && req.body.shopId) {
-      if (!mongoose.Types.ObjectId.isValid(req.body.shopId)) {
+
+    if (req.user.role === 'superadmin' && shopId) {
+      if (!mongoose.Types.ObjectId.isValid(shopId)) {
         return res.status(400).json({ message: 'Invalid shopId' });
       }
-      selectedShopId = req.body.shopId;
-    }
-    
-    if (!selectedShopId) {
-      return res.status(400).json({ message: 'Shop ID required' });
+      // Verify shop exists
+      const shop = await Shop.findById(shopId);
+      if (!shop) {
+        return res.status(404).json({ message: 'Shop not found' });
+      }
+      selectedShopId = shopId;
+    } else if (!selectedShopId && req.user.role !== 'superadmin') {
+      return res.status(400).json({ message: 'Shop ID required for non-superadmin users' });
     }
 
     const customer = new Customer({
@@ -42,45 +89,83 @@ exports.addCustomer = async (req, res) => {
   }
 };
 
-exports.getCustomers = async (req, res) => {
-  const { search, shopId } = req.query;
+// exports.addCustomer = async (req, res) => {
+//   const { name, phone, address } = req.body;
 
-  try {
-    let selectedShopId = req.user.shopId;
+//   try {
+//     let selectedShopId = req.user.shopId;
+//     console.log('Request user info:', {
+//       userId: req.user.id || req.user.userId,
+//       role: req.user.role,
+//       shopId: req.user.shopId,
+//       requestBodyShopId: req.body.shopId
+//     });
+    
+//     if (req.user.role === 'superadmin' && req.body.shopId) {
+//       if (!mongoose.Types.ObjectId.isValid(req.body.shopId)) {
+//         return res.status(400).json({ message: 'Invalid shopId' });
+//       }
+//       selectedShopId = req.body.shopId;
+//     }
+    
+//     if (!selectedShopId) {
+//       return res.status(400).json({ message: 'Shop ID required' });
+//     }
 
-    // Handle superadmin case
-    if (req.user.role === 'superadmin' && shopId) {
-      if (shopId !== 'all' && !mongoose.Types.ObjectId.isValid(shopId)) {
-        return res.status(400).json({ message: 'Invalid shopId' });
-      }
-      selectedShopId = shopId === 'all' ? null : shopId;
-    }
+//     const customer = new Customer({
+//       userId: req.user.id || req.user.userId,
+//       name,
+//       phone,
+//       address,
+//       shopId: selectedShopId,
+//     });
+//     await customer.save();
+//     res.json(customer);
+//   } catch (error) {
+//     console.error('Error in addCustomer:', error);
+//     res.status(500).json({ message: 'Server error' });
+//   }
+// };
 
-    // Build base query
-    const baseQuery = {};
-    if (selectedShopId) {
-      baseQuery.shopId = selectedShopId;
-    }
+// exports.getCustomers = async (req, res) => {
+//   const { search, shopId } = req.query;
 
-    // Add search functionality
-    if (search) {
-      baseQuery.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-      ];
-    }
+//   try {
+//     let selectedShopId = req.user.shopId;
 
-    console.log('Customer query:', baseQuery); // Debug log
+//     // Handle superadmin case
+//     if (req.user.role === 'superadmin' && shopId) {
+//       if (shopId !== 'all' && !mongoose.Types.ObjectId.isValid(shopId)) {
+//         return res.status(400).json({ message: 'Invalid shopId' });
+//       }
+//       selectedShopId = shopId === 'all' ? null : shopId;
+//     }
 
-    const customers = await Customer.find(baseQuery);
-    console.log('Found customers:', customers.length); // Debug log
+//     // Build base query
+//     const baseQuery = {};
+//     if (selectedShopId) {
+//       baseQuery.shopId = selectedShopId;
+//     }
 
-    res.json(customers);
-  } catch (error) {
-    console.error('Error in getCustomers:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
+//     // Add search functionality
+//     if (search) {
+//       baseQuery.$or = [
+//         { name: { $regex: search, $options: 'i' } },
+//         { phone: { $regex: search, $options: 'i' } },
+//       ];
+//     }
+
+//     console.log('Customer query:', baseQuery); // Debug log
+
+//     const customers = await Customer.find(baseQuery);
+//     console.log('Found customers:', customers.length); // Debug log
+
+//     res.json(customers);
+//   } catch (error) {
+//     console.error('Error in getCustomers:', error);
+//     res.status(500).json({ message: 'Server error' });
+//   }
+// };
 
 exports.getCustomerByNameOrPhone = async (req, res) => {
   const { name, phone, shopId } = req.body;
@@ -104,7 +189,7 @@ exports.getCustomerByNameOrPhone = async (req, res) => {
 
 
 
-    
+
     if (name || phone) {
       searchQuery.$or = [];
       if (name) searchQuery.$or.push({ name });
