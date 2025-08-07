@@ -1,12 +1,8 @@
-// controllers/transactionController.js
-const Transaction = require('../models/Transaction');
-const Customer = require('../models/Customer');
-const { put, del } = require('@vercel/blob');
 const mongoose = require('mongoose');
-const { generateDailyReport } = require('../utils/generateDailyReport');
-const Setting = require('../models/Setting');
-const Shop=require('../models/Shop');
-
+const Customer = require('../models/Customer'); // Adjust path as needed
+const Transaction = require('../models/Transaction'); // Adjust path as needed
+const Shop = require('../models/Shop'); // Adjust path as needed
+const { put } = require('@vercel/blob'); // Ensure Vercel Blob is imported
 
 const determineShopContext = (user, requestShopId = null) => {
   let selectedShopId = null;
@@ -21,9 +17,7 @@ const determineShopContext = (user, requestShopId = null) => {
       } else {
         throw new Error('Invalid shopId format');
       }
-    }
-    // If no shopId provided for superadmin, default to 'all'
-    else {
+    } else {
       isAllShops = true;
     }
   } else {
@@ -36,9 +30,6 @@ const determineShopContext = (user, requestShopId = null) => {
   return { selectedShopId, isAllShops };
 };
 
-/**
- * Validate shop existence and user access
- */
 const validateShopAccess = async (user, shopId) => {
   if (!shopId) return null;
   
@@ -46,9 +37,6 @@ const validateShopAccess = async (user, shopId) => {
   if (!shop) {
     throw new Error(`Shop not found: ${shopId}`);
   }
-  
-  // Additional access validation can be added here
-  // For example, check if user has access to this specific shop
   
   return shop;
 };
@@ -74,6 +62,15 @@ exports.addTransaction = async (req, res) => {
   let transactionImage = null;
 
   try {
+    // Extract userId properly
+    const userId = req.user?.userId || req.user?.id || req.user?._id;
+    
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(401).json({ message: 'Valid user ID not found in request' });
+    }
+
+    console.log("Extracted userId:", userId);
+
     // Validate transaction type
     if (!['payable', 'receivable'].includes(transactionType)) {
       return res.status(400).json({ 
@@ -107,6 +104,9 @@ exports.addTransaction = async (req, res) => {
 
     // Validate shop access
     const shop = await validateShopAccess(req.user, selectedShopId);
+    if (!shop) {
+      return res.status(404).json({ message: 'Shop not found' });
+    }
 
     // Handle file upload to Vercel Blob
     if (req.files && req.files.image) {
@@ -127,11 +127,25 @@ exports.addTransaction = async (req, res) => {
     // Handle customer
     let customer;
     if (customerId) {
-      customer = await Customer.findOne({ _id: customerId, shopId: selectedShopId });
+      // Validate customerId format
+      if (!mongoose.Types.ObjectId.isValid(customerId)) {
+        return res.status(400).json({ message: 'Invalid customer ID format' });
+      }
+
+      customer = await Customer.findOne({ 
+        _id: customerId, 
+        shopId: selectedShopId 
+      });
+      console.log("Customer lookup result:", customer);
       if (!customer) {
         return res.status(404).json({ 
           message: 'Customer not found for this shop' 
         });
+      }
+      // Ensure customer has a valid userId
+      if (!customer.userId || !mongoose.Types.ObjectId.isValid(customer.userId)) {
+        console.log("Customer missing valid userId, setting to:", userId);
+        customer.userId = new mongoose.Types.ObjectId(userId);
       }
     } else if (customerName?.trim()) {
       // Find existing customer or create new one
@@ -141,14 +155,16 @@ exports.addTransaction = async (req, res) => {
       });
       
       if (!customer) {
+        console.log("Creating new customer with userId:", userId);
         customer = new Customer({ 
-          userId: req.user.id || req.user.userId, 
+          userId: new mongoose.Types.ObjectId(userId), // Ensure ObjectId
           name: customerName.trim(), 
           phone: phone?.trim() || '', 
-          shopId: selectedShopId,
+          shopId: new mongoose.Types.ObjectId(selectedShopId),
           balance: 0
         });
         await customer.save();
+        console.log("New customer created:", customer._id);
       }
     } else {
       return res.status(400).json({ message: 'Customer ID or name is required' });
@@ -174,10 +190,11 @@ exports.addTransaction = async (req, res) => {
     }
 
     // Create transaction
+    console.log("Creating transaction with userId:", userId);
     const transaction = new Transaction({
-      userId: req.user.id || req.user.userId,
+      userId: new mongoose.Types.ObjectId(userId), // Ensure ObjectId
       customerId: customer._id,
-      shopId: selectedShopId,
+      shopId: new mongoose.Types.ObjectId(selectedShopId),
       totalAmount: parsedTotalAmount,
       payable: transactionType === 'payable' ? parsedPayable : 0,
       receivable: transactionType === 'receivable' ? parsedReceivable : 0,
@@ -193,14 +210,20 @@ exports.addTransaction = async (req, res) => {
     });
 
     await transaction.save();
+    console.log("Transaction created successfully:", transaction._id);
 
     // Update customer balance
     const balanceChange = transactionType === 'receivable' 
       ? parsedReceivable 
       : -parsedPayable;
     
+    console.log("Updating customer balance:", customer.balance, "with change:", balanceChange, "for customer:", customer._id);
     customer.balance = (customer.balance || 0) + balanceChange;
-    await customer.save();
+    
+    // Explicitly set userId before saving to avoid validation error
+    customer.userId = new mongoose.Types.ObjectId(userId);
+    await customer.save({ validateModifiedOnly: true }); // Only validate modified fields
+    console.log("Customer balance updated:", customer.balance);
 
     // Populate the transaction for response
     await transaction.populate('customerId', 'name phone balance');
@@ -217,10 +240,40 @@ exports.addTransaction = async (req, res) => {
 
   } catch (error) {
     console.error('Error in addTransaction:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => ({
+        field: err.path,
+        message: err.message,
+        value: err.value
+      }));
+      
+      return res.status(400).json({ 
+        message: 'Validation error', 
+        errors: validationErrors,
+        debug: {
+          userId: req.user?.userId || req.user?.id || req.user?._id || 'undefined',
+          reqUser: req.user,
+          customerId,
+          customerName,
+          shopId
+        }
+      });
+    }
+    
+    res.status(500).json({ 
+      message: 'Server error', 
+      error: error.message,
+      debug: process.env.NODE_ENV === 'development' ? {
+        userId: req.user?.userId || req.user?.id || req.user?._id || 'undefined',
+        reqUser: req.user,
+        customerId,
+        customerName,
+        shopId
+      } : undefined
+    });
   }
 };
-
 
 // exports.addTransaction = async (req, res) => {
 //   const { customerId, customerName, phone, totalAmount, payable, receivable, description, category, type, isRecurring, date, dueDate, transactionType, shopId } = req.body;
@@ -360,7 +413,7 @@ exports.getDailyReport = async (req, res) => {
     }
 
     console.log('getDailyReport - Shop selection:', {
-      userId: req.user?._id,
+      userId: req.user?._id || req.user.userId,
       userRole: req.user?.role,
       queryShopId: shopId,
       selectedShopId,
@@ -538,7 +591,7 @@ exports.generateDailyReportPdf = async (req, res) => {
 exports.getUserTransactions = async (req, res) => {
   try {
     const { startDate, endDate, category, customerId, transactionType, page = 1, limit = 10, shopId } = req.query;
-    const query = { userId: req.user.id };
+    const query = { userId: req.user.id || req.user.userId };
 
     // Determine shopId - Handle 'all' case properly
     if (req.user.role === 'superadmin') {
