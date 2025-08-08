@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const transactionController = require('../controllers/transactionController');
 const auth = require('../middleware/auth'); // Assuming you have authentication middleware
-
+const Transaction = require('../models/Transaction');
+const mongoose = require('mongoose');
 // Transaction routes
 router.post('/', auth, transactionController.addTransaction);
 router.get('/', auth, transactionController.getTransactions);
@@ -20,7 +21,7 @@ const validateObjectId = (req, res, next) => {
 };
 
 // GET /transactions/:id - Retrieve a specific transaction
-router.get('/:id', authMiddleware, validateObjectId, async (req, res) => {
+router.get('/:id', auth, validateObjectId, async (req, res) => {
   try {
     const { id } = req.params;
     const { role, shopId, userId } = req.user; // From authMiddleware
