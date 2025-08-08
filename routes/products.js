@@ -6,7 +6,7 @@ const AuditLog = require('../models/AuditLog');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = (req, res, next) => {  
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
 
