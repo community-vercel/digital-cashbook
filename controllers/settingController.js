@@ -3,6 +3,7 @@ const Setting = require('../models/Setting');
 const { put } = require('@vercel/blob');
 const mongoose = require('mongoose');
 const Shop = require('../models/Shop');
+
 exports.saveSettings = async (req, res) => {
   try {
     const { siteName, phone, logo, openingBalance, shopId } = req.body;
@@ -41,33 +42,63 @@ exports.saveSettings = async (req, res) => {
 
     // Find or create setting
     let setting = await Setting.findOne({ shopId: selectedShopId });
+    
     if (setting) {
-      // Update existing setting
-      setting.siteName = siteName || setting.siteName;
-      setting.phone = phone || setting.phone;
+      // Update existing setting - Remove manual timestamp assignment
+      const updateData = {};
+      
+      if (siteName) updateData.siteName = siteName;
+      if (phone) updateData.phone = phone;
+      if (logoUrl) updateData.logo = logoUrl;
+      
+      // Handle opening balance only if not already set
       if (openingBalance !== undefined && !setting.openingBalanceSet) {
-        setting.openingBalance = parseFloat(openingBalance) || 0;
-        setting.openingBalanceSet = true;
+        updateData.openingBalance = parseFloat(openingBalance) || 0;
+        updateData.openingBalanceSet = true;
       }
-      if (logoUrl) setting.logo = logoUrl;
-      setting.updatedAt = Date.now();
-      await setting.save();
+      
+      // Use findOneAndUpdate to properly handle timestamps
+      setting = await Setting.findOneAndUpdate(
+        { shopId: selectedShopId },
+        updateData,
+        { 
+          new: true, // Return updated document
+          runValidators: true // Run schema validations
+        }
+      );
+      
       res.json(setting);
     } else {
       // Create new setting
-      setting = new Setting({
-        siteName,
-        phone,
-        logo: logoUrl,
+      const newSettingData = {
+        siteName: siteName || 'Default Store',
+        phone: phone || '',
+        shopId: selectedShopId,
         openingBalance: parseFloat(openingBalance) || 0,
         openingBalanceSet: true,
-        shopId: selectedShopId,
-      });
+      };
+      
+      // Only add logo if provided
+      if (logoUrl) {
+        newSettingData.logo = logoUrl;
+      }
+      
+      setting = new Setting(newSettingData);
       await setting.save();
       res.status(201).json(setting);
     }
   } catch (error) {
     console.error('Save settings failed:', error);
+    
+    // Better error handling for validation errors
+    if (error.name === 'ValidationError') {
+      const errorMessages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        message: 'Validation failed',
+        errors: errorMessages
+      });
+    }
+    
     res.status(500).json({ 
       message: 'Internal server error',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
@@ -94,25 +125,34 @@ exports.getSettings = async (req, res) => {
     }
 
     let setting = await Setting.findOne({ shopId: selectedShopId });
+    
     if (!setting) {
       // Check if shop exists
       const shop = await Shop.findById(selectedShopId);
       if (!shop) {
         return res.status(404).json({ message: 'Shop not found' });
       }
+      
       // Create default settings if none exist
-      setting = await Setting.create({
+      const defaultSettingData = {
         shopId: selectedShopId,
         siteName: shop.name || 'Default Store',
-        currency: 'PKR', // Default currency, adjust as needed
+        phone: shop.phone || '',
+        currency: 'PKR',
         openingBalance: 0,
-        // Add other default settings as needed
-      });
+        openingBalanceSet: false
+      };
+      
+      setting = new Setting(defaultSettingData);
+      await setting.save();
     }
 
     res.json(setting);
   } catch (error) {
     console.error('Get settings failed:', error);
-    res.status(500).json({ message: 'Server error: Failed to fetch settings' });
+    res.status(500).json({ 
+      message: 'Server error: Failed to fetch settings',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
   }
 };

@@ -49,134 +49,199 @@ router.post('/generate', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Invalid product data or prices' });
     }
 
-    // Determine shop selection
-    let selectedShopId = req.user.shopId;
-    let shop = null;
+    // **SIMPLIFIED**: Always use 'all' for quotations - no shop restriction
+    const selectedShopId = 'all';
     
-    if (req.user.role === 'superadmin' && shopId) {
-      if (shopId !== 'all' && !mongoose.Types.ObjectId.isValid(shopId)) {
-        return res.status(400).json({ message: 'Invalid shopId' });
+    // Get default company info (can be from any shop or default settings)
+    let defaultShop = null;
+    let defaultSettings = null;
+    
+    try {
+      defaultShop = await Shop.findOne().sort({ createdAt: 1 }); // Get first shop as default
+      if (defaultShop) {
+        defaultSettings = await Setting.findOne({ shopId: defaultShop._id });
       }
-      selectedShopId = shopId === 'all' ? null : shopId;
-    } else if (!selectedShopId && req.user.role !== 'superadmin') {
-      return res.status(400).json({ message: 'Shop ID required for non-superadmin users' });
+    } catch (error) {
+      console.warn('Could not fetch default shop settings:', error.message);
     }
 
-    // Fetch shop and settings
-    let shopSettings = null;
-    if (selectedShopId) {
-      [shop, shopSettings] = await Promise.all([
-        Shop.findById(selectedShopId),
-        Setting.findOne({ shopId: selectedShopId })
-      ]);
-      
-      if (!shop) {
-        return res.status(404).json({ message: 'Shop not found' });
-      }
-    }
-
-    // Fetch customer
-    const customerQuery = { _id: customerId };
-    if (selectedShopId) customerQuery.shopId = selectedShopId;
-    
-    const customer = await Customer.findOne(customerQuery);
+    // **FIXED**: Fetch customer without shop restriction
+    const customer = await Customer.findById(customerId);
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found' });
     }
 
-    // Fetch products
+    // **FIXED**: Fetch products without shop restriction
     const productIds = products.map(p => p.productId);
-    const productQuery = { _id: { $in: productIds } };
-    if (selectedShopId) productQuery.shopId = selectedShopId;
+    const productList = await Product.find({ _id: { $in: productIds } });
     
-    const productList = await Product.find(productQuery);
-    if (productList.length !== productIds.length) {
-      return res.status(404).json({ message: 'One or more products not found' });
+    if (productList.length === 0) {
+      return res.status(404).json({ message: 'No products found' });
     }
 
-    // Generate PDF
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    // Generate PDF with clean, professional design
+    const doc = new PDFDocument({ 
+      margin: 40, 
+      size: 'A4',
+      bufferPages: true
+    });
+    
     const filename = `quotation-${Date.now()}.pdf`;
     const buffers = [];
     doc.on('data', buffers.push.bind(buffers));
 
-    // Use shop settings for company info
-    const companyName = shopSettings?.siteName || shop?.name || 'Al Waqas';
-    const companyPhone = shopSettings?.phone || shop?.phone || '+923335093223';
-    const companyAddress = shop?.address || 'DHA 2, Near Al Janat Mall Islamabad';
-    const companyLogo = shopSettings?.logo;
+    // Company information
+    const companyName = defaultSettings?.siteName || defaultShop?.name || 'Al Waqas';
+    const companyPhone = defaultSettings?.phone || defaultShop?.phone || '+923335093223';
+    const companyAddress = defaultShop?.address || 'DHA 2, Near Al Janat Mall Islamabad';
+    const companyLogo = defaultSettings?.logo;
+
+    // Colors
+    const primaryColor = '#2563EB';
+    const secondaryColor = '#F8FAFC';
+    const textColor = '#1F2937';
+    const lightTextColor = '#6B7280';
+    const successColor = '#059669';
 
     let currentY = 40;
 
-    // Header Section
+    // **HEADER SECTION**
+    // Company Logo
     if (companyLogo) {
       try {
         const logoBuffer = await downloadImage(companyLogo);
-        doc.image(logoBuffer, 40, currentY, { width: 60, height: 45 });
+        doc.image(logoBuffer, 40, currentY, { width: 60, height: 60 });
       } catch (error) {
         console.warn('Failed to load logo:', error.message);
+        // Simple logo placeholder
+        doc.circle(70, currentY + 30, 30)
+           .fill(primaryColor);
+        doc.font('Helvetica-Bold')
+           .fontSize(20)
+           .fillColor('white')
+           .text(companyName.charAt(0), 65, currentY + 22);
       }
+    } else {
+      // Default logo
+      doc.circle(70, currentY + 30, 30)
+         .fill(primaryColor);
+      doc.font('Helvetica-Bold')
+         .fontSize(20)
+         .fillColor('white')
+         .text(companyName.charAt(0), 65, currentY + 22);
     }
 
-    // Company details (left side)
-    doc.font('Helvetica-Bold').fontSize(20).fillColor('#2563eb')
+    // Company Details
+    doc.font('Helvetica-Bold')
+       .fontSize(24)
+       .fillColor(primaryColor)
        .text(companyName, 120, currentY);
     
-    doc.font('Helvetica').fontSize(10).fillColor('#6b7280')
-       .text(companyAddress, 120, currentY + 25)
-       .text(`Phone: ${companyPhone}`, 120, currentY + 40);
+    doc.font('Helvetica')
+       .fontSize(11)
+       .fillColor(lightTextColor)
+       .text(companyAddress, 120, currentY + 28)
+       .text(`Phone: ${companyPhone}`, 120, currentY + 44);
 
-    // Quotation details (right side)
+    // Quotation Badge
     const quotationNumber = `QT-${Date.now().toString().slice(-8)}`;
-    doc.font('Helvetica-Bold').fontSize(24).fillColor('#dc2626')
-       .text('QUOTATION', 400, currentY, { align: 'right' });
+    const badgeX = 420;
     
-    doc.font('Helvetica').fontSize(10).fillColor('#6b7280')
-       .text(`Quote #: ${quotationNumber}`, 400, currentY + 30, { align: 'right' })
-       .text(`Date: ${new Date().toLocaleDateString()}`, 400, currentY + 45, { align: 'right' });
+    doc.rect(badgeX, currentY, 135, 60)
+       .fill(primaryColor);
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(16)
+       .fillColor('white')
+       .text('QUOTATION', badgeX + 20, currentY + 10);
+    
+    doc.font('Helvetica')
+       .fontSize(9)
+       .fillColor('white')
+       .text(`Quote #: ${quotationNumber}`, badgeX + 20, currentY + 30)
+       .text(`Date: ${new Date().toLocaleDateString()}`, badgeX + 20, currentY + 44);
 
     currentY += 80;
 
-    // Horizontal line
-    doc.moveTo(40, currentY).lineTo(555, currentY).strokeColor('#e5e7eb').lineWidth(1).stroke();
+    // Divider line
+    doc.moveTo(40, currentY)
+       .lineTo(555, currentY)
+       .stroke('#E5E7EB');
+    
     currentY += 20;
 
-    // Customer details
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#374151')
-       .text('Bill To:', 40, currentY);
+    // **CUSTOMER SECTION**
+    doc.font('Helvetica-Bold')
+       .fontSize(12)
+       .fillColor(textColor)
+       .text('BILL TO:', 40, currentY);
     
-    currentY += 15;
-    doc.font('Helvetica').fontSize(11).fillColor('#6b7280')
-       .text(customer.name, 40, currentY)
-       .text(customer.phone || 'N/A', 40, currentY + 15)
-       .text(customer.email || 'N/A', 40, currentY + 30);
+    currentY += 20;
+    
+    doc.rect(40, currentY, 250, 70)
+       .fill(secondaryColor)
+       .stroke('#E5E7EB');
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(14)
+       .fillColor(textColor)
+       .text(customer.name, 50, currentY + 15);
+    
+    doc.font('Helvetica')
+       .fontSize(10)
+       .fillColor(lightTextColor)
+       .text(`Phone: ${customer.phone || 'N/A'}`, 50, currentY + 35)
+       .text(`Email: ${customer.email || 'N/A'}`, 50, currentY + 50);
 
-    currentY += 60;
+    // Quote validity
+    doc.rect(310, currentY, 245, 70)
+       .fill('#FEF3C7')
+       .stroke('#F59E0B');
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(12)
+       .fillColor('#92400E')
+       .text('QUOTE VALIDITY', 320, currentY + 15);
+    
+    doc.font('Helvetica')
+       .fontSize(10)
+       .fillColor('#92400E')
+       .text('Valid for 30 days from issue date', 320, currentY + 35)
+       .text(`Expires: ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}`, 320, currentY + 50);
 
-    // Products Table
+    currentY += 90;
+
+    // **PRODUCTS TABLE**
     const tableTop = currentY;
-    const colWidths = [200, 60, 75, 75, 75, 70];
+    const colWidths = [180, 45, 70, 70, 70, 80]; // Adjusted to fit A4 width better
     const tableLeft = 40;
     const rowHeight = 25;
+    const tableWidth = colWidths.reduce((a, b) => a + b, 0); // Total: 515px (fits in 555px page width)
 
     // Table Header
-    doc.font('Helvetica-Bold').fontSize(10).fillColor('#ffffff');
-    const headers = ['Product', 'Qty', 'Cost Price', 'Retail Price', 'Sale Price', 'Total'];
+    doc.rect(tableLeft, tableTop, tableWidth, 30)
+       .fill(primaryColor);
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(10)
+       .fillColor('white');
+    
+    const headers = ['Product Name', 'Qty', 'Cost', 'Retail', 'Sale', 'Total'];
     
     headers.forEach((header, i) => {
       const x = tableLeft + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
-      doc.rect(x, tableTop, colWidths[i], rowHeight).fill('#4f46e5');
-      doc.fillColor('#ffffff').text(header, x + 5, tableTop + 8, {
+      doc.text(header, x + 5, tableTop + 10, {
         width: colWidths[i] - 10,
-        align: i === 0 ? 'left' : 'center',
+        align: i === 0 ? 'left' : 'center'
       });
     });
 
     // Table Rows
-    let y = tableTop + rowHeight;
+    let y = tableTop + 30;
     let total = 0;
+    let rowIndex = 0;
 
-    products.forEach((item, index) => {
+    products.forEach((item) => {
       const product = productList.find((p) => p._id.toString() === item.productId);
       if (!product) return;
       
@@ -185,69 +250,101 @@ router.post('/generate', authMiddleware, async (req, res) => {
       const lineTotal = safeSalePrice * item.quantity;
       total += lineTotal;
 
-      // Alternating row background
-      if (index % 2 === 0) {
-        doc.rect(tableLeft, y, colWidths.reduce((a, b) => a + b, 0), rowHeight).fill('#f9fafb');
-      }
+      // Row background
+      const rowColor = rowIndex % 2 === 0 ? 'white' : '#F9FAFB';
+      doc.rect(tableLeft, y, tableWidth, rowHeight)
+         .fill(rowColor);
 
       // Row content
-      doc.font('Helvetica').fontSize(9).fillColor('#374151');
+      doc.font('Helvetica')
+         .fontSize(9)
+         .fillColor(textColor);
       
       const values = [
         product.name.length > 25 ? product.name.substring(0, 25) + '...' : product.name,
         item.quantity.toString(),
-        (item.costPrice || 0).toFixed(2),
-        (item.retailPrice || 0).toFixed(2),
-        safeSalePrice.toFixed(2),
-        lineTotal.toFixed(2)
+        `₨${(item.costPrice || 0).toFixed(0)}`,
+        `₨${(item.retailPrice || 0).toFixed(0)}`,
+        `₨${safeSalePrice.toFixed(0)}`,
+        `₨${lineTotal.toFixed(0)}`
       ];
 
       values.forEach((value, i) => {
         const x = tableLeft + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
         doc.text(value, x + 5, y + 8, {
           width: colWidths[i] - 10,
-          align: i === 0 ? 'left' : 'center',
+          align: i === 0 ? 'left' : 'center'
         });
       });
 
-      // Row border
-      doc.rect(tableLeft, y, colWidths.reduce((a, b) => a + b, 0), rowHeight)
-         .strokeColor('#e5e7eb').lineWidth(0.5).stroke();
-
       y += rowHeight;
+      rowIndex++;
     });
 
     // Table border
-    doc.rect(tableLeft, tableTop, colWidths.reduce((a, b) => a + b, 0), y - tableTop)
-       .strokeColor('#d1d5db').lineWidth(1).stroke();
+    doc.rect(tableLeft, tableTop, tableWidth, y - tableTop)
+       .stroke('#D1D5DB');
 
-    // Total section
-    const totalY = y + 15;
-    doc.font('Helvetica-Bold').fontSize(14).fillColor('#374151')
-       .text(`Grand Total: ${formatCurrency(total)}`, tableLeft + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], totalY, { align: 'right' });
+    // **TOTAL SECTION**
+    currentY = y + 20;
+    
+    // Total box
+    const totalBoxWidth = 180;
+    const totalBoxX = tableLeft + tableWidth - totalBoxWidth;
+    
+    doc.rect(totalBoxX, currentY, totalBoxWidth, 40)
+       .fill(successColor);
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(12)
+       .fillColor('white')
+       .text('GRAND TOTAL', totalBoxX + 10, currentY + 8);
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(16)
+       .fillColor('white')
+       .text(formatCurrency(total), totalBoxX + 10, currentY + 22);
 
-    // Terms (if space available)
-    const termsY = totalY + 40;
-    if (termsY < 700) { // Check if we have space
-      doc.font('Helvetica-Bold').fontSize(11).fillColor('#374151')
-         .text('Terms & Conditions:', 40, termsY);
+    currentY += 60;
+
+    // **TERMS & CONDITIONS**
+    if (currentY < 650) {
+      doc.rect(40, currentY, 515, 80)
+         .fill('#F8FAFC')
+         .stroke('#E5E7EB');
       
-      doc.font('Helvetica').fontSize(9).fillColor('#6b7280')
-         .text('• This quotation is valid for 30 days from the date of issue.', 40, termsY + 20)
-         .text('• Prices are subject to change without prior notice.', 40, termsY + 35)
-         .text('• Payment terms as per agreement.', 40, termsY + 50);
+      doc.font('Helvetica-Bold')
+         .fontSize(11)
+         .fillColor(textColor)
+         .text('TERMS & CONDITIONS', 50, currentY + 12);
+      
+      doc.font('Helvetica')
+         .fontSize(9)
+         .fillColor(lightTextColor)
+         .text('• This quotation is valid for 30 days from the date of issue', 50, currentY + 30)
+         .text('• Prices are subject to change without prior notice', 50, currentY + 44)
+         .text('• Payment terms as per mutual agreement', 50, currentY + 58);
     }
 
-    // Footer
+    // **FOOTER**
     const footerY = 750;
-    doc.moveTo(40, footerY).lineTo(555, footerY).strokeColor('#e5e7eb').lineWidth(1).stroke();
     
-    doc.font('Helvetica-Bold').fontSize(10).fillColor('#4f46e5')
-       .text('Thank you for your business!', 40, footerY + 10, { align: 'center' });
+    doc.rect(0, footerY, 595, 72)
+       .fill('#F8FAFC');
     
-    doc.font('Helvetica').fontSize(8).fillColor('#6b7280')
-       .text(`Contact: ${companyPhone}`, 40, footerY + 25, { align: 'center' })
-       .text(`Generated on ${new Date().toLocaleString()}`, 40, footerY + 35, { align: 'center' });
+    doc.moveTo(40, footerY)
+       .lineTo(555, footerY)
+       .stroke('#E5E7EB');
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(12)
+       .fillColor(primaryColor)
+       .text('Thank you for your business!', 0, footerY + 20, { align: 'center' });
+    
+    doc.font('Helvetica')
+       .fontSize(8)
+       .fillColor(lightTextColor)
+       .text(`${companyPhone} | Generated on ${new Date().toLocaleString()}`, 0, footerY + 40, { align: 'center' });
 
     doc.end();
     
@@ -266,12 +363,17 @@ router.post('/generate', authMiddleware, async (req, res) => {
       url: blob.url, 
       total: formatCurrency(total), 
       customer,
-      quotationNumber
+      quotationNumber,
+      productsFound: productList.length,
+      productsRequested: products.length
     });
 
   } catch (error) {
     console.error('Error generating quotation:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
