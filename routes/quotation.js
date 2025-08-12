@@ -263,10 +263,10 @@ router.post('/generate', authMiddleware, async (req, res) => {
       const values = [
         product.name.length > 25 ? product.name.substring(0, 25) + '...' : product.name,
         item.quantity.toString(),
-        `₨${(item.costPrice || 0).toFixed(0)}`,
-        `₨${(item.retailPrice || 0).toFixed(0)}`,
-        `₨${safeSalePrice.toFixed(0)}`,
-        `₨${lineTotal.toFixed(0)}`
+        (item.costPrice || 0).toFixed(0),
+      (item.retailPrice || 0).toFixed(0),
+      safeSalePrice.toFixed(0),
+       lineTotal.toFixed(0)
       ];
 
       values.forEach((value, i) => {
