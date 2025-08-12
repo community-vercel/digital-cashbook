@@ -1,4 +1,3 @@
-// backend/utils/backupService.js
 const { MongoClient, ObjectId } = require('mongodb');
 const { put, list, download, del } = require('@vercel/blob');
 
@@ -252,27 +251,6 @@ class BackupService {
     }
   }
 
-  async saveBackupToBlob(backupData) {
-  try {
-    const backupBuffer = Buffer.from(JSON.stringify(backupData));
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const shopId = backupData.shopId || 'all';
-    const fileName = `backups/backup_${shopId}_${timestamp}.json`;
-
-    console.log('Saving backup to Vercel Blob:', fileName);
-    const { url } = await put(fileName, backupBuffer, {
-      access: 'public',
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      addRandomSuffix: true,
-    });
-
-    console.log(`Backup uploaded successfully to ${url}`);
-    return { url, fileName }; // Return both URL and filename
-  } catch (error) {
-    console.error('Failed to upload backup:', error);
-    throw new Error(`Failed to upload backup: ${error.message}`);
-  }
-}
   async uploadBackupToVercel(backupData) {
     try {
       const backupBuffer = Buffer.from(JSON.stringify(backupData));
@@ -288,7 +266,7 @@ class BackupService {
       });
 
       console.log(`Backup uploaded successfully to ${url}`);
-      return url;
+      return { url, fileName }; // Return both URL and filename
     } catch (error) {
       console.error('Failed to upload backup:', error);
       throw new Error(`Failed to upload backup: ${error.message}`);
@@ -497,4 +475,4 @@ class BackupService {
   }
 }
 
-module.exports = BackupService; // ✅ exports the class
+module.exports = BackupService;

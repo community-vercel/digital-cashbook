@@ -61,7 +61,7 @@ async function createManualBackup(includeCleanup = true) {
   try {
     console.log('Creating manual backup...');
     const backup = await backupService.createBackup();
-    const { url, filename } = await backupService.saveBackupToBlob(backup);
+    const { url, filename } = await backupService.uploadBackupToVercel(backup);
     console.log(`Manual backup created: ${filename} at ${url}`);
 
     let cleanupResult = null;
