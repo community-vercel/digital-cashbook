@@ -107,29 +107,143 @@ router.post('/generate', authMiddleware, async (req, res) => {
 
     // **HEADER SECTION**
     // Company Logo
-    if (companyLogo) {
-      try {
-        const logoBuffer = await downloadImage(companyLogo);
-        doc.image(logoBuffer, 40, currentY, { width: 60, height: 60 });
-      } catch (error) {
-        console.warn('Failed to load logo:', error.message);
-        // Simple logo placeholder
-        doc.circle(70, currentY + 30, 30)
-           .fill(primaryColor);
-        doc.font('Helvetica-Bold')
-           .fontSize(20)
-           .fillColor('white')
-           .text(companyName.charAt(0), 65, currentY + 22);
-      }
-    } else {
-      // Default logo
-      doc.circle(70, currentY + 30, 30)
-         .fill(primaryColor);
-      doc.font('Helvetica-Bold')
-         .fontSize(20)
-         .fillColor('white')
-         .text(companyName.charAt(0), 65, currentY + 22);
-    }
+   
+// **HEADER SECTION**
+// Company Logo with improved rounded design
+if (companyLogo) {
+  try {
+    const logoBuffer = await downloadImage(companyLogo);
+    
+    // Create a circular clipping path for the logo
+    doc.save();
+    doc.circle(70, currentY + 30, 30)
+       .clip();
+    
+    // Draw the logo image within the circular clip
+    doc.image(logoBuffer, 40, currentY, { 
+      width: 60, 
+      height: 60,
+      fit: [60, 60],
+      align: 'center',
+      valign: 'center'
+    });
+    
+    doc.restore();
+    
+    // Add a subtle border around the circular logo
+    doc.circle(70, currentY + 30, 30)
+       .stroke('#E5E7EB', 2);
+    
+  } catch (error) {
+    console.warn('Failed to load logo:', error.message);
+    // Enhanced logo placeholder with gradient effect
+    createRoundedLogoPlaceholder(doc, companyName, 70, currentY + 30, primaryColor);
+  }
+} else {
+  // Enhanced default logo placeholder
+  createRoundedLogoPlaceholder(doc, companyName, 70, currentY + 30, primaryColor);
+}
+function createHexagonLogo(doc, companyName, centerX, centerY, primaryColor) {
+  const radius = 30;
+  const initial = companyName.charAt(0).toUpperCase();
+  
+  // Draw hexagon
+  doc.save();
+  doc.translate(centerX, centerY);
+  
+  // Create hexagon path
+  doc.moveTo(radius, 0);
+  for (let i = 1; i < 6; i++) {
+    const angle = (i * 60 * Math.PI) / 180;
+    doc.lineTo(radius * Math.cos(angle), radius * Math.sin(angle));
+  }
+  doc.closePath();
+  doc.fill(primaryColor);
+  
+  // Add inner hexagon for depth
+  const innerRadius = radius * 0.7;
+  doc.moveTo(innerRadius, 0);
+  for (let i = 1; i < 6; i++) {
+    const angle = (i * 60 * Math.PI) / 180;
+    doc.lineTo(innerRadius * Math.cos(angle), innerRadius * Math.sin(angle));
+  }
+  doc.closePath();
+  doc.fill('rgba(255, 255, 255, 0.1)');
+  
+  doc.restore();
+  
+  // Company initial
+  doc.font('Helvetica-Bold')
+     .fontSize(22)
+     .fillColor('white')
+     .text(initial, centerX - 8, centerY - 11, {
+       width: 16,
+       align: 'center'
+     });
+}
+// Helper function to create a beautiful rounded logo placeholder
+function createRoundedLogoPlaceholder(doc, companyName, centerX, centerY, primaryColor) {
+  // Outer circle with gradient effect (simulate with multiple circles)
+  doc.circle(centerX, centerY, 32)
+     .fill('#E5E7EB');
+  
+  doc.circle(centerX, centerY, 30)
+     .fill(primaryColor);
+  
+  // Inner highlight circle for depth
+  doc.circle(centerX - 8, centerY - 8, 8)
+     .fill('rgba(255, 255, 255, 0.3)')
+     .fillOpacity(0.3);
+  
+  // Company initial with better typography
+  const initial = companyName.charAt(0).toUpperCase();
+  
+  doc.font('Helvetica-Bold')
+     .fontSize(24)
+     .fillColor('white')
+     .fillOpacity(1)
+     .text(initial, centerX - 8, centerY - 12, {
+       width: 16,
+       align: 'center'
+     });
+  
+  // Subtle outer glow effect
+  doc.circle(centerX, centerY, 33)
+     .stroke('rgba(37, 99, 235, 0.2)', 1)
+     .strokeOpacity(0.2);
+}
+
+// Alternative: More modern logo placeholder with icon-like design
+function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primaryColor) {
+  // Background circle with soft shadow effect
+  doc.circle(centerX + 1, centerY + 1, 30)
+     .fill('#00000010'); // Very light shadow
+  
+  // Main circle
+  doc.circle(centerX, centerY, 30)
+     .fill(primaryColor);
+  
+  // Modern geometric pattern inside
+  const initial = companyName.charAt(0).toUpperCase();
+  
+  // Create a small square rotated 45 degrees as background
+  doc.save();
+  doc.translate(centerX, centerY);
+  doc.rotate(45 * Math.PI / 180);
+  doc.rect(-8, -8, 16, 16)
+     .fill('rgba(255, 255, 255, 0.2)');
+  doc.restore();
+  
+  // Company initial
+  doc.font('Helvetica-Bold')
+     .fontSize(20)
+     .fillColor('white')
+     .text(initial, centerX - 7, centerY - 10, {
+       width: 14,
+       align: 'center'
+     });
+}
+
 
     // Company Details
     doc.font('Helvetica-Bold')
