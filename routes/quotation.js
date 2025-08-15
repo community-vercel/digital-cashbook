@@ -49,15 +49,15 @@ router.post('/generate', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Invalid product data or prices' });
     }
 
-    // **SIMPLIFIED**: Always use 'all' for quotations - no shop restriction
+    // Always use 'all' for quotations - no shop restriction
     const selectedShopId = 'all';
     
-    // Get default company info (can be from any shop or default settings)
+    // Get default company info
     let defaultShop = null;
     let defaultSettings = null;
     
     try {
-      defaultShop = await Shop.findOne().sort({ createdAt: 1 }); // Get first shop as default
+      defaultShop = await Shop.findOne().sort({ createdAt: 1 });
       if (defaultShop) {
         defaultSettings = await Setting.findOne({ shopId: defaultShop._id });
       }
@@ -65,13 +65,13 @@ router.post('/generate', authMiddleware, async (req, res) => {
       console.warn('Could not fetch default shop settings:', error.message);
     }
 
-    // **FIXED**: Fetch customer without shop restriction
+    // Fetch customer
     const customer = await Customer.findById(customerId);
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found' });
     }
 
-    // **FIXED**: Fetch products without shop restriction
+    // Fetch products
     const productIds = products.map(p => p.productId);
     const productList = await Product.find({ _id: { $in: productIds } });
     
@@ -79,7 +79,7 @@ router.post('/generate', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'No products found' });
     }
 
-    // Generate PDF with clean, professional design
+    // Generate PDF
     const doc = new PDFDocument({ 
       margin: 40, 
       size: 'A4',
@@ -93,185 +93,88 @@ router.post('/generate', authMiddleware, async (req, res) => {
     // Company information
     const companyName = defaultSettings?.siteName || defaultShop?.name || 'Al Waqas';
     const companyPhone = defaultSettings?.phone || defaultShop?.phone || '+923335093223';
-    const companyAddress = defaultShop?.address || 'DHA 2, Near Al Janat Mall Islamabad';
+    const companyAddress = defaultShop?.address || 'Nadir Plaza, Opposite Lignum Tower, DHA 2, Near Al Janat Mall, GT Road, Islamabad, Pakistan';
     const companyLogo = defaultSettings?.logo;
 
     // Colors
-    const primaryColor = '#2563EB';
-    const secondaryColor = '#F8FAFC';
-    const textColor = '#1F2937';
-    const lightTextColor = '#6B7280';
-    const successColor = '#059669';
+    const black = '#000000';
+    const white = '#FFFFFF';
 
     let currentY = 40;
 
     // **HEADER SECTION**
     // Company Logo
-   
-// **HEADER SECTION**
-// Company Logo with improved rounded design
-if (companyLogo) {
-  try {
-    const logoBuffer = await downloadImage(companyLogo);
-    
-    // Create a circular clipping path for the logo
-    doc.save();
-    doc.circle(70, currentY + 30, 30)
-       .clip();
-    
-    // Draw the logo image within the circular clip
-    doc.image(logoBuffer, 40, currentY, { 
-      width: 60, 
-      height: 60,
-      fit: [60, 60],
-      align: 'center',
-      valign: 'center'
-    });
-    
-    doc.restore();
-    
-    // Add a subtle border around the circular logo
-    doc.circle(70, currentY + 30, 30)
-       .stroke('#E5E7EB', 2);
-    
-  } catch (error) {
-    console.warn('Failed to load logo:', error.message);
-    // Enhanced logo placeholder with gradient effect
-    createRoundedLogoPlaceholder(doc, companyName, 70, currentY + 30, primaryColor);
-  }
-} else {
-  // Enhanced default logo placeholder
-  createRoundedLogoPlaceholder(doc, companyName, 70, currentY + 30, primaryColor);
-}
-function createHexagonLogo(doc, companyName, centerX, centerY, primaryColor) {
-  const radius = 30;
-  const initial = companyName.charAt(0).toUpperCase();
-  
-  // Draw hexagon
-  doc.save();
-  doc.translate(centerX, centerY);
-  
-  // Create hexagon path
-  doc.moveTo(radius, 0);
-  for (let i = 1; i < 6; i++) {
-    const angle = (i * 60 * Math.PI) / 180;
-    doc.lineTo(radius * Math.cos(angle), radius * Math.sin(angle));
-  }
-  doc.closePath();
-  doc.fill(primaryColor);
-  
-  // Add inner hexagon for depth
-  const innerRadius = radius * 0.7;
-  doc.moveTo(innerRadius, 0);
-  for (let i = 1; i < 6; i++) {
-    const angle = (i * 60 * Math.PI) / 180;
-    doc.lineTo(innerRadius * Math.cos(angle), innerRadius * Math.sin(angle));
-  }
-  doc.closePath();
-  doc.fill('rgba(255, 255, 255, 0.1)');
-  
-  doc.restore();
-  
-  // Company initial
-  doc.font('Helvetica-Bold')
-     .fontSize(22)
-     .fillColor('white')
-     .text(initial, centerX - 8, centerY - 11, {
-       width: 16,
-       align: 'center'
-     });
-}
-// Helper function to create a beautiful rounded logo placeholder
-function createRoundedLogoPlaceholder(doc, companyName, centerX, centerY, primaryColor) {
-  // Outer circle with gradient effect (simulate with multiple circles)
-  doc.circle(centerX, centerY, 32)
-     .fill('#E5E7EB');
-  
-  doc.circle(centerX, centerY, 30)
-     .fill(primaryColor);
-  
-  // Inner highlight circle for depth
-  doc.circle(centerX - 8, centerY - 8, 8)
-     .fill('rgba(255, 255, 255, 0.3)')
-     .fillOpacity(0.3);
-  
-  // Company initial with better typography
-  const initial = companyName.charAt(0).toUpperCase();
-  
-  doc.font('Helvetica-Bold')
-     .fontSize(24)
-     .fillColor('white')
-     .fillOpacity(1)
-     .text(initial, centerX - 8, centerY - 12, {
-       width: 16,
-       align: 'center'
-     });
-  
-  // Subtle outer glow effect
-  doc.circle(centerX, centerY, 33)
-     .stroke('rgba(37, 99, 235, 0.2)', 1)
-     .strokeOpacity(0.2);
-}
-
-// Alternative: More modern logo placeholder with icon-like design
-function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primaryColor) {
-  // Background circle with soft shadow effect
-  doc.circle(centerX + 1, centerY + 1, 30)
-     .fill('#00000010'); // Very light shadow
-  
-  // Main circle
-  doc.circle(centerX, centerY, 30)
-     .fill(primaryColor);
-  
-  // Modern geometric pattern inside
-  const initial = companyName.charAt(0).toUpperCase();
-  
-  // Create a small square rotated 45 degrees as background
-  doc.save();
-  doc.translate(centerX, centerY);
-  doc.rotate(45 * Math.PI / 180);
-  doc.rect(-8, -8, 16, 16)
-     .fill('rgba(255, 255, 255, 0.2)');
-  doc.restore();
-  
-  // Company initial
-  doc.font('Helvetica-Bold')
-     .fontSize(20)
-     .fillColor('white')
-     .text(initial, centerX - 7, centerY - 10, {
-       width: 14,
-       align: 'center'
-     });
-}
-
+    if (companyLogo) {
+      try {
+        const logoBuffer = await downloadImage(companyLogo);
+        doc.image(logoBuffer, 40, currentY, { 
+          width: 60, 
+          height: 60,
+          fit: [60, 60],
+          align: 'center',
+          valign: 'center'
+        });
+      } catch (error) {
+        console.warn('Failed to load logo:', error.message);
+        // Simple logo placeholder
+        const initial = companyName.charAt(0).toUpperCase();
+        doc.circle(70, currentY + 30, 30)
+           .fill(black);
+        doc.font('Helvetica-Bold')
+           .fontSize(24)
+           .fillColor(white)
+           .text(initial, 62, currentY + 18, {
+             width: 16,
+             align: 'center'
+           });
+      }
+    } else {
+      // Simple logo placeholder
+      const initial = companyName.charAt(0).toUpperCase();
+      doc.circle(70, currentY + 30, 30)
+         .fill(black);
+      doc.font('Helvetica-Bold')
+         .fontSize(24)
+         .fillColor(white)
+         .text(initial, 62, currentY + 18, {
+           width: 16,
+           align: 'center'
+         });
+    }
 
     // Company Details
     doc.font('Helvetica-Bold')
        .fontSize(24)
-       .fillColor(primaryColor)
+       .fillColor(black)
        .text(companyName, 120, currentY);
     
+    // Adjust address to prevent overlap
     doc.font('Helvetica')
        .fontSize(11)
-       .fillColor(lightTextColor)
-       .text(companyAddress, 120, currentY + 28)
-       .text(`Phone: ${companyPhone}`, 120, currentY + 44);
+       .fillColor(black);
+    
+    const addressLine1 = 'Nadir Plaza, Opposite Lignum Tower, DHA 2';
+    const addressLine2 = 'Near Al Janat Mall, GT Road, Islamabad, Pakistan';
+    
+    doc.text(addressLine1, 120, currentY + 28, { width: 280 });
+    doc.text(addressLine2, 120, currentY + 42, { width: 280 });
+    doc.text(`Phone: ${companyPhone}`, 120, currentY + 56);
 
     // Quotation Badge
     const quotationNumber = `QT-${Date.now().toString().slice(-8)}`;
     const badgeX = 420;
     
     doc.rect(badgeX, currentY, 135, 60)
-       .fill(primaryColor);
+       .stroke(black);
     
     doc.font('Helvetica-Bold')
        .fontSize(16)
-       .fillColor('white')
+       .fillColor(black)
        .text('QUOTATION', badgeX + 20, currentY + 10);
     
     doc.font('Helvetica')
        .fontSize(9)
-       .fillColor('white')
+       .fillColor(black)
        .text(`Quote #: ${quotationNumber}`, badgeX + 20, currentY + 30)
        .text(`Date: ${new Date().toLocaleDateString()}`, badgeX + 20, currentY + 44);
 
@@ -280,46 +183,44 @@ function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primary
     // Divider line
     doc.moveTo(40, currentY)
        .lineTo(555, currentY)
-       .stroke('#E5E7EB');
+       .stroke(black);
     
     currentY += 20;
 
     // **CUSTOMER SECTION**
     doc.font('Helvetica-Bold')
        .fontSize(12)
-       .fillColor(textColor)
+       .fillColor(black)
        .text('BILL TO:', 40, currentY);
     
     currentY += 20;
     
     doc.rect(40, currentY, 250, 70)
-       .fill(secondaryColor)
-       .stroke('#E5E7EB');
+       .stroke(black);
     
     doc.font('Helvetica-Bold')
        .fontSize(14)
-       .fillColor(textColor)
+       .fillColor(black)
        .text(customer.name, 50, currentY + 15);
     
     doc.font('Helvetica')
        .fontSize(10)
-       .fillColor(lightTextColor)
+       .fillColor(black)
        .text(`Phone: ${customer.phone || 'N/A'}`, 50, currentY + 35)
        .text(`Email: ${customer.email || 'N/A'}`, 50, currentY + 50);
 
     // Quote validity
     doc.rect(310, currentY, 245, 70)
-       .fill('#FEF3C7')
-       .stroke('#F59E0B');
+       .stroke(black);
     
     doc.font('Helvetica-Bold')
        .fontSize(12)
-       .fillColor('#92400E')
+       .fillColor(black)
        .text('QUOTE VALIDITY', 320, currentY + 15);
     
     doc.font('Helvetica')
        .fontSize(10)
-       .fillColor('#92400E')
+       .fillColor(black)
        .text('Valid for 30 days from issue date', 320, currentY + 35)
        .text(`Expires: ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}`, 320, currentY + 50);
 
@@ -327,18 +228,18 @@ function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primary
 
     // **PRODUCTS TABLE**
     const tableTop = currentY;
-    const colWidths = [180, 45, 70, 70, 70, 80]; // Adjusted to fit A4 width better
+    const colWidths = [180, 45, 70, 70, 70, 80];
     const tableLeft = 40;
     const rowHeight = 25;
-    const tableWidth = colWidths.reduce((a, b) => a + b, 0); // Total: 515px (fits in 555px page width)
+    const tableWidth = colWidths.reduce((a, b) => a + b, 0);
 
     // Table Header
     doc.rect(tableLeft, tableTop, tableWidth, 30)
-       .fill(primaryColor);
+       .stroke(black);
     
     doc.font('Helvetica-Bold')
        .fontSize(10)
-       .fillColor('white');
+       .fillColor(black);
     
     const headers = ['Product Name', 'Qty', 'Cost', 'Retail', 'Sale', 'Total'];
     
@@ -359,28 +260,27 @@ function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primary
       const product = productList.find((p) => p._id.toString() === item.productId);
       if (!product) return;
       
-      const salePrice = typeof item.salePrice === 'string' ? parseFloat(item.salePrice) : item.salePrice;
+      const salePrice = typeof item.salePrice === 'string' ? parseFloat(p.salePrice) : item.salePrice;
       const safeSalePrice = typeof salePrice === 'number' && !isNaN(salePrice) ? salePrice : 0;
       const lineTotal = safeSalePrice * item.quantity;
       total += lineTotal;
 
-      // Row background
-      const rowColor = rowIndex % 2 === 0 ? 'white' : '#F9FAFB';
+      // Row background (no fill for simplicity)
       doc.rect(tableLeft, y, tableWidth, rowHeight)
-         .fill(rowColor);
+         .stroke(black);
 
       // Row content
       doc.font('Helvetica')
          .fontSize(9)
-         .fillColor(textColor);
+         .fillColor(black);
       
       const values = [
         product.name.length > 25 ? product.name.substring(0, 25) + '...' : product.name,
         item.quantity.toString(),
         (item.costPrice || 0).toFixed(0),
-      (item.retailPrice || 0).toFixed(0),
-      safeSalePrice.toFixed(0),
-       lineTotal.toFixed(0)
+        (item.retailPrice || 0).toFixed(0),
+        safeSalePrice.toFixed(0),
+        lineTotal.toFixed(0)
       ];
 
       values.forEach((value, i) => {
@@ -397,7 +297,7 @@ function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primary
 
     // Table border
     doc.rect(tableLeft, tableTop, tableWidth, y - tableTop)
-       .stroke('#D1D5DB');
+       .stroke(black);
 
     // **TOTAL SECTION**
     currentY = y + 20;
@@ -407,16 +307,16 @@ function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primary
     const totalBoxX = tableLeft + tableWidth - totalBoxWidth;
     
     doc.rect(totalBoxX, currentY, totalBoxWidth, 40)
-       .fill(successColor);
+       .stroke(black);
     
     doc.font('Helvetica-Bold')
        .fontSize(12)
-       .fillColor('white')
+       .fillColor(black)
        .text('GRAND TOTAL', totalBoxX + 10, currentY + 8);
     
     doc.font('Helvetica-Bold')
        .fontSize(16)
-       .fillColor('white')
+       .fillColor(black)
        .text(formatCurrency(total), totalBoxX + 10, currentY + 22);
 
     currentY += 60;
@@ -424,17 +324,16 @@ function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primary
     // **TERMS & CONDITIONS**
     if (currentY < 650) {
       doc.rect(40, currentY, 515, 80)
-         .fill('#F8FAFC')
-         .stroke('#E5E7EB');
+         .stroke(black);
       
       doc.font('Helvetica-Bold')
          .fontSize(11)
-         .fillColor(textColor)
+         .fillColor(black)
          .text('TERMS & CONDITIONS', 50, currentY + 12);
       
       doc.font('Helvetica')
          .fontSize(9)
-         .fillColor(lightTextColor)
+         .fillColor(black)
          .text('• This quotation is valid for 30 days from the date of issue', 50, currentY + 30)
          .text('• Prices are subject to change without prior notice', 50, currentY + 44)
          .text('• Payment terms as per mutual agreement', 50, currentY + 58);
@@ -443,21 +342,18 @@ function createModernLogoPlaceholder(doc, companyName, centerX, centerY, primary
     // **FOOTER**
     const footerY = 750;
     
-    doc.rect(0, footerY, 595, 72)
-       .fill('#F8FAFC');
-    
     doc.moveTo(40, footerY)
        .lineTo(555, footerY)
-       .stroke('#E5E7EB');
+       .stroke(black);
     
     doc.font('Helvetica-Bold')
        .fontSize(12)
-       .fillColor(primaryColor)
+       .fillColor(black)
        .text('Thank you for your business!', 0, footerY + 20, { align: 'center' });
     
     doc.font('Helvetica')
        .fontSize(8)
-       .fillColor(lightTextColor)
+       .fillColor(black)
        .text(`${companyPhone} | Generated on ${new Date().toLocaleString()}`, 0, footerY + 40, { align: 'center' });
 
     doc.end();

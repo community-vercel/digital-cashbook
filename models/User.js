@@ -6,8 +6,9 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, enum: ['superadmin', 'admin', 'user'], default: 'user' },
-  shopId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop' }, // Optional for superadmin
+  shopId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop' },
   createdAt: { type: Date, default: Date.now },
+  refreshToken: { type: String } // Added for refresh token storage
 });
 
 userSchema.pre('save', async function (next) {
