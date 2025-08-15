@@ -45,7 +45,7 @@ exports.register = async (req, res) => {
     const accessToken = jwt.sign(
       { userId: user._id, role: user.role, shopId: user.shopId || null },
       process.env.JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: '7d' }
     );
 
     const refreshToken = jwt.sign(
@@ -94,7 +94,7 @@ exports.login = async (req, res) => {
     const accessToken = jwt.sign(
       { userId: user._id, role: user.role, shopId: user.shopId || null },
       process.env.JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: '7d' }
     );
 
     const refreshToken = jwt.sign(
