@@ -88,7 +88,7 @@ router.get('/itemssearch', authMiddleware, async (req, res) => {
 
 // Add new product
 router.post('/', authMiddleware, async (req, res) => {
-  const { name, costPrice, retailPrice, discountPercentage, category } = req.body;
+  const { name, costPrice, retailPrice, discountPercentage, category,weight } = req.body;
   try {
     // Validate inputs
     if (costPrice < 0 || retailPrice < 0) {
@@ -103,6 +103,7 @@ router.post('/', authMiddleware, async (req, res) => {
       retailPrice,
       discountPercentage,
       category,
+      weight,
     });
     await product.save();
     res.json({ message: 'Product added successfully', product });
@@ -117,7 +118,7 @@ router.post('/', authMiddleware, async (req, res) => {
 // Update product
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { name, costPrice, retailPrice, discountPercentage, category } = req.body;
+  const { name, costPrice, retailPrice, discountPercentage, category,weight } = req.body;
   try {
     // Validate inputs
     if (costPrice < 0 || retailPrice < 0) {
@@ -128,7 +129,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
     const product = await Product.findByIdAndUpdate(
       id,
-      { name, costPrice, retailPrice, discountPercentage, category },
+      { name, costPrice, retailPrice, discountPercentage, category,weight },
       { new: true }
     );
     if (!product) return res.status(404).json({ message: 'Product not found' });

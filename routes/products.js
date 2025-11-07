@@ -5,6 +5,7 @@ const Product = require('../models/Product');
 const AuditLog = require('../models/AuditLog');
 const router = express.Router();
 const mongoose = require('mongoose');
+const Shop = require('../models/Shop'); // Add Shop model
 
 const authMiddleware = (req, res, next) => {  
   const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -19,6 +20,16 @@ const authMiddleware = (req, res, next) => {
     res.status(401).json({ message: 'Token is not valid' });
   }
 };
+
+router.get('/shops', authMiddleware, async (req, res) => {
+  try {
+    const shops = await Shop.find().select('_id name location');
+    res.json({ shops });
+  } catch (error) {
+    console.error('Error fetching shops:', error);
+    res.status(500).json({ message: 'Failed to fetch shops' });
+  }
+});
 // Check if item exists with productId and category
 router.get('/check', authMiddleware, async (req, res) => {
   const { productId, category, excludeId } = req.query;
@@ -27,7 +38,7 @@ router.get('/check', authMiddleware, async (req, res) => {
       console.log('Invalid productId:', productId);
       return res.status(400).json({ message: 'Invalid product ID' });
     }
-    if (!['gallon', 'quarter', 'drums', 'liters'].includes(category)) {
+    if (!['gallon', 'quarter', 'drums', 'liters',  'Kg','packet', 'piece', 'bag', 'bottles', 'cans',].includes(category)) {
       console.log('Invalid category:', category);
       return res.status(400).json({ message: 'Invalid category' });
     }
@@ -50,16 +61,17 @@ router.get('/quantity', authMiddleware, async (req, res) => {
     const page = parseInt(req.query.page) || 1; // Default to page 1
     const limit = parseInt(req.query.limit) || 10; // Default to 10 items per page
     const skip = (page - 1) * limit;
+    // const items = await Item.find({ userId: req.user.userId })
 
     // Fetch items with pagination
-    const items = await Item.find({ userId: req.user.userId })
+    const items = await Item.find()
       .populate('productId', 'name')
       .select('productId quantity userId')
       .skip(skip)
       .limit(limit);
 
     // Get total count for pagination metadata
-    const totalItems = await Item.countDocuments({ userId: req.user.userId });
+    const totalItems = await Item.countDocuments();
 
     
     if (items.length === 0 && page === 1) {
@@ -206,51 +218,7 @@ router.get('/audit-logs', authMiddleware, async (req, res) => {
   }
 });
 
-// Get all items with search and pagination
-router.get('/', authMiddleware, async (req, res) => {
-  const { search, page = 1, limit = 10 } = req.query;
-  const query = { userId: req.user.userId };
 
-  try {
-    // Step 1: Find product IDs matching the search term (if provided)
-    let productIds = [];
-    if (search) {
-      const products = await Product.find({
-        name: { $regex: search, $options: 'i' },
-      }).select('_id');
-      productIds = products.map((p) => p._id);
-    }
-
-    // Step 2: Build the Item query
-    if (search) {
-      query.$or = [
-        ...(productIds.length ? [{ productId: { $in: productIds } }] : []),
-        { category: { $regex: search, $options: 'i' } },
-        { shelf: { $regex: search, $options: 'i' } },
-        { color: { $regex: search, $options: 'i' } },
-        { colorCode: { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    // Step 3: Fetch paginated items
-    const items = await Item.find(query)
-      .populate('productId')
-      .skip((Number(page) - 1) * Number(limit))
-      .limit(Number(limit))
-      .lean(); // Use lean() for better performance
-
-    // Step 4: Count total documents
-    const total = await Item.countDocuments(query);
-
-    // Log for debugging
- 
-
-    res.json({ items, total });
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
 
 router.get('/totals', async (req, res) => {
   try {
@@ -292,36 +260,126 @@ router.get('/totals', async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch totals' });
   }
 });
+
+
+router.get('/', authMiddleware, async (req, res) => {
+  const { search, page = 1, limit = 10 } = req.query;
+  const query = {};
+
+  try {
+    // Filter based on user role
+    if (req.user.role === 'superadmin') {
+      // Superadmin sees all items (both global and user-specific)
+      // No additional filter needed
+    } else {
+      // Regular users see global items + their own items
+      query.$or = [
+        { isSuperadminItem: true },
+        { userId: req.user.userId, isSuperadminItem: false }
+      ];
+    }
+
+    // Step 1: Find product IDs matching the search term (if provided)
+    let productIds = [];
+    if (search) {
+      const products = await Product.find({
+        name: { $regex: search, $options: 'i' },
+      }).select('_id');
+      productIds = products.map((p) => p._id);
+    }
+
+    // Step 2: Build the Item query
+    if (search) {
+      const searchConditions = [
+        ...(productIds.length ? [{ productId: { $in: productIds } }] : []),
+        { category: { $regex: search, $options: 'i' } },
+        { shelf: { $regex: search, $options: 'i' } },
+        { color: { $regex: search, $options: 'i' } },
+        { colorCode: { $regex: search, $options: 'i' } },
+      ];
+      
+      if (query.$or) {
+        query.$and = [
+          { $or: query.$or },
+          { $or: searchConditions }
+        ];
+        delete query.$or;
+      } else {
+        query.$or = searchConditions;
+      }
+    }
+
+    // Step 3: Fetch paginated items
+    const items = await Item.find(query)
+      .populate('productId')
+      .populate('shopId', 'name location') // Populate shop details
+      .skip((Number(page) - 1) * Number(limit))
+      .limit(Number(limit))
+      .lean();
+
+    // Step 4: Count total documents
+    const total = await Item.countDocuments(query);
+
+    res.json({ items, total });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Create new item
 router.post('/', authMiddleware, async (req, res) => {
-  const { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage } = req.body;
+  const { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage, shopId } = req.body;
   try {
     console.log('POST /items payload:', req.body);
+    
     if (!mongoose.isValidObjectId(productId)) {
       console.log('Invalid productId:', productId);
       return res.status(400).json({ message: 'Invalid product ID' });
     }
+    
     if (quantity < 0 || minStock < 0 || maxStock < 0) {
       return res.status(400).json({ message: 'Quantity, min stock, and max stock cannot be negative' });
     }
+    
     if (minStock > maxStock) {
       return res.status(400).json({ message: 'Min stock cannot be greater than max stock' });
     }
+    
     if (discountPercentage < 0 || discountPercentage > 100) {
       return res.status(400).json({ message: 'Discount percentage must be between 0 and 100' });
     }
-    if (!['gallon', 'quarter', 'drums', 'liters'].includes(category)) {
+    
+    if (!['gallon', 'quarter', 'drums', 'liters', 'Kg', 'packet', 'piece', 'bag', 'bottles', 'cans'].includes(category)) {
       console.log('Invalid category:', category);
       return res.status(400).json({ message: 'Invalid category' });
     }
+
+    // Validate shopId if provided
+    if (shopId && !mongoose.isValidObjectId(shopId)) {
+      return res.status(400).json({ message: 'Invalid shop ID' });
+    }
+
+    if (shopId) {
+      const shopExists = await Shop.findById(shopId);
+      if (!shopExists) {
+        return res.status(400).json({ message: 'Shop not found' });
+      }
+    }
+    
     const product = await Product.findById(productId);
     if (!product) {
       console.log('Product not found for ID:', productId);
       return res.status(400).json({ message: 'Invalid product ID' });
     }
+    
     if (product.category !== category) {
       console.log('Category mismatch:', { productCategory: product.category, itemCategory: category });
       return res.status(400).json({ message: 'Selected category does not match product category' });
     }
+
+    // Determine if this is a superadmin global item
+    const isSuperadminItem = req.user.role === 'superadmin' && req.body.isSuperadminItem === true;
 
     const item = new Item({
       productId,
@@ -331,11 +389,14 @@ router.post('/', authMiddleware, async (req, res) => {
       minStock,
       maxStock,
       userId: req.user.userId,
+      shopId: shopId || null,
       color,
       colorCode,
       category,
       discountPercentage,
+      isSuperadminItem
     });
+    
     await item.save();
 
     // Create audit log entry for item creation
@@ -356,46 +417,69 @@ router.post('/', authMiddleware, async (req, res) => {
           colorCode,
           category,
           discountPercentage,
+          shopId,
+          isSuperadminItem
         },
       },
     });
     await auditLog.save();
 
-    const populatedItem = await Item.findById(item._id).populate('productId');
+    const populatedItem = await Item.findById(item._id)
+      .populate('productId')
+      .populate('shopId', 'name location');
+    
     console.log('Item added:', populatedItem);
     res.json({ message: 'Item added successfully', item: populatedItem });
   } catch (error) {
     console.error('Error in POST /items:', error.message, error.stack);
-    if (error.code === 11000 && error.keyPattern?.productId && error.keyPattern?.category) {
-      return res.status(400).json({ message: 'An item with this product and category already exists for this user' });
-    }
-    if (error.code === 11000 && error.keyPattern?.barcode) {
-      return res.status(400).json({ message: 'Barcode already exists or null barcode conflict' });
+    if (error.code === 11000) {
+      if (error.keyPattern?.productId && error.keyPattern?.category) {
+        return res.status(400).json({ message: 'An item with this product and category already exists' });
+      }
+      if (error.keyPattern?.barcode) {
+        return res.status(400).json({ message: 'Barcode already exists' });
+      }
     }
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
+
 // Update item
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage } = req.body;
-  console.log('PUT /items/:id received:', { id, productId, category });
+  const { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage, shopId } = req.body;
+  console.log('PUT /items/:id received:', { id, productId, category, shopId });
+  
   try {
-    // Validate inputs
     if (quantity < 0 || minStock < 0 || maxStock < 0) {
       return res.status(400).json({ message: 'Quantity, min stock, and max stock cannot be negative' });
     }
+    
     if (minStock > maxStock) {
       return res.status(400).json({ message: 'Min stock cannot be greater than max stock' });
     }
+    
     if (discountPercentage < 0 || discountPercentage > 100) {
       return res.status(400).json({ message: 'Discount percentage must be between 0 and 100' });
     }
+
+    if (shopId && !mongoose.isValidObjectId(shopId)) {
+      return res.status(400).json({ message: 'Invalid shop ID' });
+    }
+
+    if (shopId) {
+      const shopExists = await Shop.findById(shopId);
+      if (!shopExists) {
+        return res.status(400).json({ message: 'Shop not found' });
+      }
+    }
+    
     const product = await Product.findById(productId);
     console.log('Product found:', product);
     if (!product) {
       return res.status(400).json({ message: 'Invalid product ID' });
     }
+    
     if (product.category !== category) {
       return res.status(400).json({ message: 'Selected category does not match product category' });
     }
@@ -420,12 +504,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (existingItem.category !== category) changes.category = { old: existingItem.category, new: category };
     if (existingItem.discountPercentage !== discountPercentage)
       changes.discountPercentage = { old: existingItem.discountPercentage, new: discountPercentage };
+    if (existingItem.shopId?.toString() !== shopId) changes.shopId = { old: existingItem.shopId, new: shopId };
 
     const item = await Item.findOneAndUpdate(
       { _id: id, userId: req.user.userId },
-      { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage },
+      { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage, shopId },
       { new: true }
-    ).populate('productId');
+    ).populate('productId').populate('shopId', 'name location');
 
     if (!item) {
       console.log('Item not found for id:', id);
