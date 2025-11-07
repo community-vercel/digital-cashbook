@@ -517,8 +517,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Item not found' });
     }
 
-    
-    // Create audit log entry if there are changes
+
+
+
+
+
     if (Object.keys(changes).length > 0) {
       const auditLog = new AuditLog({
         action: 'UPDATE',
