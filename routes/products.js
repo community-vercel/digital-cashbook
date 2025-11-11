@@ -43,13 +43,12 @@ router.get('/check', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Invalid category' });
     }
     // Build the query, excluding the item with excludeId if provided
-    const query = { productId, category, userId: req.user.userId };
+    const query = { productId, category };
     if (excludeId && mongoose.isValidObjectId(excludeId)) {
       query._id = { $ne: excludeId };
     }
     console.log('Checking item with query:', query);
     const item = await Item.findOne(query);
-    console.log('Check item result:', item ? 'Exists' : 'Does not exist', { productId, category, excludeId, userId: req.user.userId });
     return res.json({ exists: !!item });
   } catch (error) {
     console.error('Error in /items/check:', error.message, error.stack);
@@ -109,7 +108,7 @@ router.patch('/:id/quantity', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Amount must be a non-negative integer' });
     }
 
-    const item = await Item.findOne({ _id: id, userId: req.user.userId });
+    const item = await Item.findOne({ _id: id });
     if (!item) {
       return res.status(404).json({ message: 'Item not found or unauthorized' });
     }
@@ -485,7 +484,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 
     // Fetch the existing item to compare changes
-    const existingItem = await Item.findOne({ _id: id, userId: req.user.userId });
+    const existingItem = await Item.findOne({ _id: id });
     if (!existingItem) {
       console.log('Item not found for id:', id);
       return res.status(404).json({ message: 'Item not found' });
@@ -507,7 +506,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (existingItem.shopId?.toString() !== shopId) changes.shopId = { old: existingItem.shopId, new: shopId };
 
     const item = await Item.findOneAndUpdate(
-      { _id: id, userId: req.user.userId },
+      { _id: id },
       { productId, quantity, barcode, shelf, minStock, maxStock, color, colorCode, category, discountPercentage, shopId },
       { new: true }
     ).populate('productId').populate('shopId', 'name location');
@@ -548,7 +547,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.get('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
-    const item = await Item.findOne({ _id: id, userId: req.user.userId }).populate('productId');
+    const item = await Item.findOne({ _id: id }).populate('productId');
     if (!item) return res.status(404).json({ message: 'Item not found' });
     res.json(item);
   } catch (error) {
@@ -559,8 +558,11 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // Delete item
 router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
+    console.log("delete is");
+
+  console.log("delete is",id);
   try {
-    const item = await Item.findOneAndDelete({ _id: id, userId: req.user.userId });
+    const item = await Item.findOneAndDelete({ _id: id });
     if (!item) return res.status(404).json({ message: 'Item not found' });
     res.json({ message: 'Item deleted successfully' });
   } catch (error) {
