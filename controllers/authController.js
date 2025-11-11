@@ -7,6 +7,10 @@ require('dotenv').config();
 
 const mongoose = require('mongoose');
 
+// Token expiration times
+const ACCESS_TOKEN_EXPIRY = '1h'; // 1 hour
+const REFRESH_TOKEN_EXPIRY = '7d'; // 7 days
+
 exports.register = async (req, res) => {
   try {
     const { username, password, role, shopId } = req.body;
@@ -45,13 +49,13 @@ exports.register = async (req, res) => {
     const accessToken = jwt.sign(
       { userId: user._id, role: user.role, shopId: user.shopId || null },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: ACCESS_TOKEN_EXPIRY }
     );
 
     const refreshToken = jwt.sign(
       { userId: user._id },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: REFRESH_TOKEN_EXPIRY }
     );
 
     await User.findByIdAndUpdate(user._id, { refreshToken });
@@ -94,13 +98,13 @@ exports.login = async (req, res) => {
     const accessToken = jwt.sign(
       { userId: user._id, role: user.role, shopId: user.shopId || null },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: ACCESS_TOKEN_EXPIRY }
     );
 
     const refreshToken = jwt.sign(
       { userId: user._id },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: REFRESH_TOKEN_EXPIRY }
     );
 
     await User.findByIdAndUpdate(user._id, { refreshToken });
@@ -110,6 +114,7 @@ exports.login = async (req, res) => {
       refreshToken,
       user: {
         id: user._id,
+        username: user.username,
         role: user.role,
         shopId: user.shopId,
       },
@@ -129,12 +134,27 @@ exports.validateToken = async (req, res) => {
   const token = authHeader.replace('Bearer ', '');
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Optional: Check if user still exists
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
     res.status(200).json({
       message: 'Token is valid',
-      user: { id: decoded.userId, role: decoded.role, shopId: decoded.shopId },
+      user: { 
+        id: decoded.userId, 
+        role: decoded.role, 
+        shopId: decoded.shopId,
+        username: user.username 
+      },
     });
   } catch (error) {
-    res.status(401).json({ error: 'Invalid or expired token', details: error.message });
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+    }
+    res.status(401).json({ error: 'Invalid token', details: error.message });
   }
 };
 
@@ -148,20 +168,24 @@ exports.refreshToken = async (req, res) => {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const user = await User.findById(decoded.userId);
 
-    if (!user || user.refreshToken !== refreshToken) {
+    if (!user) {
+      return res.status(403).json({ error: 'User not found' });
+    }
+
+    if (user.refreshToken !== refreshToken) {
       return res.status(403).json({ error: 'Invalid refresh token' });
     }
 
     const newAccessToken = jwt.sign(
       { userId: user._id, role: user.role, shopId: user.shopId || null },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: ACCESS_TOKEN_EXPIRY }
     );
 
     const newRefreshToken = jwt.sign(
       { userId: user._id },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: REFRESH_TOKEN_EXPIRY }
     );
 
     await User.findByIdAndUpdate(user._id, { refreshToken: newRefreshToken });
@@ -172,6 +196,9 @@ exports.refreshToken = async (req, res) => {
     });
   } catch (error) {
     console.error('Refresh token failed:', error);
+    if (error.name === 'TokenExpiredError') {
+      return res.status(403).json({ error: 'Refresh token expired', code: 'REFRESH_TOKEN_EXPIRED' });
+    }
     res.status(403).json({ error: 'Invalid or expired refresh token', details: error.message });
   }
 };
@@ -179,23 +206,28 @@ exports.refreshToken = async (req, res) => {
 exports.logout = async (req, res) => {
   try {
     const { refreshToken } = req.body;
+    
     if (!refreshToken) {
       return res.status(400).json({ error: 'Refresh token required' });
     }
 
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await User.findById(decoded.userId);
+    try {
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+      const user = await User.findById(decoded.userId);
 
-    if (!user || user.refreshToken !== refreshToken) {
-      return res.status(403).json({ error: 'Invalid refresh token' });
+      if (user && user.refreshToken === refreshToken) {
+        // Clear refresh token from user record
+        await User.findByIdAndUpdate(user._id, { refreshToken: null });
+      }
+    } catch (verifyError) {
+      // Even if token verification fails, we'll still return success
+      console.log('Token verification failed during logout:', verifyError.message);
     }
-
-    // Clear refresh token from user record
-    await User.findByIdAndUpdate(user._id, { refreshToken: null });
 
     res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout failed:', error);
-    res.status(500).json({ error: 'Server error: Failed to logout', details: error.message });
+    // Still return success even if there's an error
+    res.status(200).json({ message: 'Logged out successfully' });
   }
 };
